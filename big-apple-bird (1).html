@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Big Apple Bird</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { height:100%; height:-webkit-fill-available; }
+  body {
+    background: #3a6ea5;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    width:100%; height:100%;
+    min-height:-webkit-fill-available;
+    font-family:'Press Start 2P', monospace;
+    overflow:hidden;
+    touch-action:none; -ms-touch-action:none;
+    overscroll-behavior:none;
+    user-select:none; -webkit-user-select:none;
+    position:fixed; top:0; left:0; right:0; bottom:0;
+  }
+  #game-wrapper {
+    display:flex; flex-direction:column;
+    align-items:center; gap:8px;
+    width:100%; padding:8px;
+  }
+  #title {
+    color:#fff; font-size:clamp(11px,3.2vw,19px);
+    text-shadow:2px 2px 0 #c00, 4px 4px 0 #800;
+    letter-spacing:1px;
+  }
+  #canvas-container {
+    position:relative;
+    border:4px solid #fff;
+    box-shadow:0 0 0 3px #c00, 0 0 30px rgba(255,200,0,0.25);
+    border-radius:6px;
+    max-width:min(360px, calc(100vw - 16px));
+    max-height:min(520px, calc(100dvh - 100px));
+    aspect-ratio:360/520;
+    overflow:hidden;
+  }
+  canvas { display:block; width:100%; height:100%; border-radius:3px; touch-action:none; -webkit-touch-callout:none; -webkit-user-select:none; }
+  #score-bar {
+    display:flex; justify-content:space-between;
+    width:min(360px, calc(100vw - 16px));
+    color:#fff; font-size:clamp(7px,2vw,9px);
+    text-shadow:1px 1px 0 #000;
+  }
+  #overlay {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:12px;
+    background:rgba(200,220,255,0.90);
+    border-radius:3px; z-index:10; pointer-events:none;
+  }
+  #overlay.hidden { display:none; }
+  .overlay-title {
+    color:#c00; font-size:clamp(13px,4vw,18px);
+    text-shadow:2px 2px 0 #800;
+    text-align:center; line-height:1.8;
+  }
+  .overlay-sub { color:#1a2a4a; font-size:clamp(6px,1.8vw,8px); text-align:center; line-height:2.2; }
+  .score-display { color:#1a1a2e; font-size:clamp(8px,2.5vw,11px); text-align:center; line-height:2.4; }
+  .blink { animation:blink 1s step-end infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .bird-emoji { font-size:clamp(26px,8vw,36px); animation:wobble 1.2s ease-in-out infinite; }
+  @keyframes wobble { 0%,100%{transform:rotate(-8deg) scale(1)} 50%{transform:rotate(8deg) scale(1.1)} }
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <div id="title">🍎 BIG APPLE BIRD</div>
+  <div id="score-bar">
+    <span>SCORE: <span id="score-display">0</span></span>
+    <span>BEST: <span id="best-display">0</span></span>
+  </div>
+  <div id="canvas-container">
+    <canvas id="gameCanvas" width="360" height="520"></canvas>
+    <div id="overlay">
+      <div class="bird-emoji">🐦</div>
+      <div class="overlay-title">BIG APPLE<br>BIRD</div>
+      <div class="overlay-sub">
+        NYC pigeon on the loose!<br>
+        Dodge buildings, subway<br>
+        cars &amp; yellow cabs!<br><br>
+        TAP or SPACE to flap
+      </div>
+      <div class="overlay-sub blink">— TAP TO START —</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const scoreDisplay = document.getElementById('score-display');
+const bestDisplay  = document.getElementById('best-display');
+const W = canvas.width, H = canvas.height;
+
+const GRAVITY=0.45, FLAP_POWER=-8.5;
+const OBS_WIDTH=68, PIPE_GAP=158, PIPE_SPEED=2.4, PIPE_INTERVAL=1650;
+const GROUND_H=56, BIRD_X=80, BIRD_R=13;
+
+let state='idle', score=0, best=0;
+let birdY, birdVY, birdAngle;
+let pipes=[], lastPipeTime=0, lastTime=0;
+let particles=[], groundOffset=0, clouds=[];
+
+// ═══════════════════════════════════════════
+//  PIGEON SPRITE
+// ═══════════════════════════════════════════
+const BIRD_SIZE=36;
+function makePigeon(wingUp) {
+  const c=document.createElement('canvas'); c.width=BIRD_SIZE; c.height=BIRD_SIZE;
+  const g=c.getContext('2d');
+  g.fillStyle='#7a8090'; g.beginPath(); g.ellipse(7,21,8,5,0.3,0,Math.PI*2); g.fill();
+  g.fillStyle='#8a9ab0'; g.beginPath(); g.ellipse(18,19,13,10,0,0,Math.PI*2); g.fill();
+  g.fillStyle='#6abf8a'; g.beginPath(); g.ellipse(22,14,6,5,-0.2,0,Math.PI*2); g.fill();
+  g.fillStyle='#a06abf'; g.globalAlpha=0.5;
+  g.beginPath(); g.ellipse(22,14,5,4,-0.2,0,Math.PI*2); g.fill(); g.globalAlpha=1;
+  if(wingUp){
+    g.fillStyle='#6a7585'; g.beginPath(); g.ellipse(16,11,10,5,-0.5,0,Math.PI*2); g.fill();
+    g.fillStyle='#555f6e'; g.beginPath(); g.ellipse(13,9,6,3,-0.7,0,Math.PI*2); g.fill();
+  } else {
+    g.fillStyle='#6a7585'; g.beginPath(); g.ellipse(16,25,10,5,0.5,0,Math.PI*2); g.fill();
+    g.fillStyle='#555f6e'; g.beginPath(); g.ellipse(13,27,6,3,0.7,0,Math.PI*2); g.fill();
+  }
+  g.fillStyle='#c5ccd8'; g.beginPath(); g.ellipse(20,21,7,5,0.15,0,Math.PI*2); g.fill();
+  g.strokeStyle='#4a5260'; g.lineWidth=1.5;
+  if(wingUp){
+    g.beginPath(); g.moveTo(10,13); g.lineTo(22,12); g.stroke();
+    g.beginPath(); g.moveTo(10,15); g.lineTo(20,14); g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(10,23); g.lineTo(22,24); g.stroke();
+    g.beginPath(); g.moveTo(10,25); g.lineTo(20,26); g.stroke();
+  }
+  g.fillStyle='#8a9ab0'; g.beginPath(); g.arc(24,13,7,0,Math.PI*2); g.fill();
+  g.fillStyle='#e8720c'; g.beginPath(); g.arc(27,11,4,0,Math.PI*2); g.fill();
+  g.fillStyle='#fff';    g.beginPath(); g.arc(27,11,2.8,0,Math.PI*2); g.fill();
+  g.fillStyle='#111';    g.beginPath(); g.arc(27.5,11,1.6,0,Math.PI*2); g.fill();
+  g.fillStyle='#fff';    g.beginPath(); g.arc(28.2,10.2,0.7,0,Math.PI*2); g.fill();
+  g.fillStyle='#ccc'; g.beginPath(); g.moveTo(31,11); g.lineTo(36,13); g.lineTo(31,15); g.closePath(); g.fill();
+  g.fillStyle='#999'; g.beginPath(); g.moveTo(31,13); g.lineTo(36,13); g.lineTo(31,15); g.closePath(); g.fill();
+  g.strokeStyle='#e8909a'; g.lineWidth=1.5;
+  [[16,28,14,34],[14,34,11,36],[14,34,16,36],[20,28,18,34],[18,34,15,36],[18,34,20,36]].forEach(([x1,y1,x2,y2])=>{
+    g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+  });
+  return c;
+}
+const pigeonUp=makePigeon(true), pigeonDown=makePigeon(false);
+
+// ═══════════════════════════════════════════
+//  BACKGROUND SKYLINE (pre-rendered)
+// ═══════════════════════════════════════════
+const bgSkyline=(()=>{
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  const sky=g.createLinearGradient(0,0,0,H-GROUND_H);
+  sky.addColorStop(0,'#5ba3d9'); sky.addColorStop(0.4,'#87bfe8');
+  sky.addColorStop(0.75,'#b8d9f0'); sky.addColorStop(1,'#d0e8f5');
+  g.fillStyle=sky; g.fillRect(0,0,W,H-GROUND_H);
+  const bgs=[{x:0,w:30,h:160},{x:28,w:20,h:120},{x:46,w:35,h:180},
+    {x:79,w:18,h:140},{x:95,w:28,h:200},{x:121,w:22,h:150},
+    {x:141,w:40,h:220},{x:179,w:15,h:170},{x:192,w:32,h:190},
+    {x:222,w:24,h:160},{x:244,w:36,h:230},{x:278,w:20,h:130},
+    {x:296,w:30,h:210},{x:324,w:25,h:175},{x:347,w:15,h:150}];
+  const gy=H-GROUND_H;
+  bgs.forEach(b=>{ g.fillStyle='#7a9bbf'; g.globalAlpha=0.55; g.fillRect(b.x,gy-b.h,b.w,b.h); g.globalAlpha=1; });
+  return c;
+})();
+
+for(let i=0;i<5;i++) clouds.push({x:Math.random()*W, y:30+Math.random()*120, w:50+Math.random()*60, speed:0.15+Math.random()*0.2});
+
+// ═══════════════════════════════════════════
+//  OBSTACLE TYPE DEFINITIONS
+//  type: 'building' | 'subway' | 'taxi'
+// ═══════════════════════════════════════════
+
+// — BUILDING helpers —
+const BLDG_STYLES=[
+  {primary:'#1c2540',accent:'#141a30',top:'spire'},
+  {primary:'#0d2235',accent:'#0a1a28',top:'flat'},
+  {primary:'#2d1a10',accent:'#3d2518',top:'cornice'},
+  {primary:'#101820',accent:'#0a1215',top:'flat'},
+  {primary:'#1e1808',accent:'#2a2210',top:'stepped'},
+];
+function drawWindows(bx,by,bw,bh){
+  const cols=Math.floor((bw-10)/12), rows=Math.floor((bh-20)/14);
+  const sx=bx+(bw-cols*12)/2, sy=by+18;
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const wx=sx+c*12, wy=sy+r*14, lit=Math.random()>0.5;
+    ctx.fillStyle=lit?(Math.random()>0.5?'#a8cce8':'#d0e8f5'):'#050a10';
+    ctx.globalAlpha=lit?0.6+Math.random()*0.35:0.85;
+    ctx.fillRect(wx,wy,6,8);
+  }
+  ctx.globalAlpha=1;
+}
+function drawWaterTower(x,y){
+  ctx.fillStyle='#3d2010';
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+12,y); ctx.lineTo(x+10,y+16); ctx.lineTo(x+2,y+16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#2a1508'; ctx.fillRect(x+4,y+16,4,5);
+  ctx.strokeStyle='#1a0d04'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x+1,y+6);  ctx.lineTo(x+11,y+6);  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+1,y+11); ctx.lineTo(x+11,y+11); ctx.stroke();
+}
+function drawBuilding(bx,height,fromTop,si){
+  const s=BLDG_STYLES[si%BLDG_STYLES.length], bw=OBS_WIDTH, gy=H-GROUND_H;
+  const grad=ctx.createLinearGradient(bx,0,bx+bw,0);
+  grad.addColorStop(0,s.accent); grad.addColorStop(0.4,s.primary); grad.addColorStop(1,'#03060a');
+  if(fromTop){
+    ctx.fillStyle=grad; ctx.fillRect(bx,0,bw,height);
+    drawWindows(bx,0,bw,height);
+    ctx.fillStyle=s.accent; ctx.fillRect(bx-5,height-14,bw+10,16);
+    ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(bx+3,0,5,height);
+  } else {
+    const by=gy-height;
+    ctx.fillStyle=grad; ctx.fillRect(bx,by,bw,height);
+    drawWindows(bx,by,bw,height);
+    ctx.fillStyle=s.accent; ctx.fillRect(bx-5,by,bw+10,16);
+    ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fillRect(bx+3,by+16,5,height-16);
+    if(s.top==='spire'){
+      ctx.fillStyle='#8899aa';
+      ctx.beginPath(); ctx.moveTo(bx+bw/2,by-32); ctx.lineTo(bx+bw/2-5,by); ctx.lineTo(bx+bw/2+5,by); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='#8899aa'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(bx+bw/2,by-32); ctx.lineTo(bx+bw/2,by-50); ctx.stroke();
+      ctx.fillStyle='#ff4444'; ctx.beginPath(); ctx.arc(bx+bw/2,by-50,2.5,0,Math.PI*2); ctx.fill();
+    } else if(s.top==='stepped'){
+      ctx.fillStyle=s.accent;
+      ctx.fillRect(bx+5,by-12,bw-10,12); ctx.fillRect(bx+12,by-22,bw-24,10); ctx.fillRect(bx+18,by-30,bw-36,8);
+    } else if(s.top==='cornice'){
+      ctx.fillStyle=s.accent; ctx.fillRect(bx-7,by-10,bw+14,10);
+    } else {
+      ctx.fillStyle='#333'; ctx.fillRect(bx+8,by-9,14,9); ctx.fillRect(bx+bw-24,by-11,12,11);
+    }
+    if(si%3===0) drawWaterTower(bx+bw-18,by-30);
+  }
+}
+
+// — SUBWAY helpers —
+// A pair of subway cars stacked: top hangs from ceiling, bottom rises from floor
+// Each "half" is rendered as a stack of subway cars
+function drawSubwayCar(bx, y, carH, flipped) {
+  // flipped=true means car is upside-down (top obstacle)
+  const bw = OBS_WIDTH;
+  const carW = bw;
+  const bodyH = Math.min(carH, 52);
+  const bodyY = flipped ? y + carH - bodyH : y;
+
+  // Car body
+  const subwayGrad = ctx.createLinearGradient(bx, 0, bx+carW, 0);
+  subwayGrad.addColorStop(0,'#1a3a8a');
+  subwayGrad.addColorStop(0.5,'#2255bb');
+  subwayGrad.addColorStop(1,'#102060');
+  ctx.fillStyle = subwayGrad;
+  // rounded rect
+  const r=4;
+  ctx.beginPath();
+  ctx.moveTo(bx+r,bodyY); ctx.lineTo(bx+carW-r,bodyY);
+  ctx.arcTo(bx+carW,bodyY,bx+carW,bodyY+r,r);
+  ctx.lineTo(bx+carW,bodyY+bodyH-r);
+  ctx.arcTo(bx+carW,bodyY+bodyH,bx+carW-r,bodyY+bodyH,r);
+  ctx.lineTo(bx+r,bodyY+bodyH);
+  ctx.arcTo(bx,bodyY+bodyH,bx,bodyY+bodyH-r,r);
+  ctx.lineTo(bx,bodyY+r);
+  ctx.arcTo(bx,bodyY,bx+r,bodyY,r);
+  ctx.closePath(); ctx.fill();
+
+  // Silver stripe
+  ctx.fillStyle='#c0c8d8';
+  ctx.fillRect(bx, bodyY+10, carW, 6);
+
+  // Windows
+  const winY = bodyY + 18;
+  const winH = 14;
+  const wins = [8, 22, 36, 50];
+  wins.forEach(wx => {
+    if(bx+wx+10 < bx+carW-4) {
+      ctx.fillStyle='#aad4f8';
+      ctx.fillRect(bx+wx, winY, 10, winH);
+      ctx.strokeStyle='#334'; ctx.lineWidth=1;
+      ctx.strokeRect(bx+wx, winY, 10, winH);
+    }
+  });
+
+  // Door
+  ctx.fillStyle='#0d2070';
+  ctx.fillRect(bx+carW/2-6, bodyY+16, 12, bodyH-16);
+  ctx.fillStyle='#888'; ctx.fillRect(bx+carW/2-1, bodyY+bodyH/2, 2, 5);
+
+  // Bottom / top detail (connector)
+  ctx.fillStyle='#555';
+  if(flipped) ctx.fillRect(bx+4, bodyY, carW-8, 4);
+  else        ctx.fillRect(bx+4, bodyY+bodyH-4, carW-8, 4);
+
+  // Fill remaining height with track shaft
+  if(carH > bodyH+2) {
+    const shaftY = flipped ? y : bodyY+bodyH;
+    const shaftH = carH - bodyH;
+    ctx.fillStyle='#223355';
+    ctx.fillRect(bx+10, shaftY, carW-20, shaftH);
+    // rail lines
+    ctx.strokeStyle='#556688'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(bx+18,shaftY); ctx.lineTo(bx+18,shaftY+shaftH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx+carW-18,shaftY); ctx.lineTo(bx+carW-18,shaftY+shaftH); ctx.stroke();
+  }
+}
+
+function drawSubway(bx, topH, bottomH) {
+  // Top: car hanging from top of screen
+  drawSubwayCar(bx, 0, topH, true);
+  // Bottom: car rising from ground
+  const by = H - GROUND_H - bottomH;
+  drawSubwayCar(bx, by, bottomH, false);
+}
+
+// — TAXI helpers —
+function drawTaxiStack(bx, height, fromTop) {
+  const bw = OBS_WIDTH;
+  const taxiH = 46; // height of one taxi
+  const gy = H - GROUND_H;
+
+  if(fromTop) {
+    // Fill column from top down
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(bx, 0, bw, height);
+    // Draw taxis stacked, upside-down
+    let y = height - taxiH;
+    while(y > -taxiH) {
+      drawTaxi(bx, y, true);
+      y -= taxiH + 2;
+    }
+    // Bottom cap
+    ctx.fillStyle = '#f5c500';
+    ctx.fillRect(bx-5, height-8, bw+10, 10);
+  } else {
+    const startY = gy - height;
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(bx, startY, bw, height);
+    // Draw taxis stacked right-side-up
+    let y = startY;
+    while(y < gy) {
+      drawTaxi(bx, y, false);
+      y += taxiH + 2;
+    }
+    // Top cap
+    ctx.fillStyle = '#f5c500';
+    ctx.fillRect(bx-5, startY, bw+10, 10);
+  }
+}
+
+function drawTaxi(bx, by, flipped) {
+  const bw = OBS_WIDTH;
+  ctx.save();
+  if(flipped) {
+    ctx.translate(bx + bw/2, by + 23);
+    ctx.scale(1,-1);
+    ctx.translate(-(bx + bw/2), -(by + 23));
+  }
+
+  // Taxi body - bright yellow
+  ctx.fillStyle='#f5c500';
+  ctx.fillRect(bx+4, by+14, bw-8, 26);
+
+  // Cab roof
+  ctx.fillStyle='#e6b800';
+  ctx.beginPath();
+  ctx.moveTo(bx+14, by+14);
+  ctx.lineTo(bx+12, by+4);
+  ctx.lineTo(bx+bw-12, by+4);
+  ctx.lineTo(bx+bw-14, by+14);
+  ctx.closePath(); ctx.fill();
+
+  // Taxi sign on roof
+  ctx.fillStyle='#fff';
+  ctx.fillRect(bx+bw/2-10, by+1, 20, 8);
+  ctx.fillStyle='#111'; ctx.font='bold 5px monospace'; ctx.textAlign='center';
+  ctx.fillText('TAXI', bx+bw/2, by+7);
+
+  // Windshield
+  ctx.fillStyle='#aad4f8';
+  ctx.fillRect(bx+15, by+6, bw-30, 9);
+
+  // Windows
+  ctx.fillStyle='#88c4f0';
+  ctx.fillRect(bx+6,  by+16, 16, 11);
+  ctx.fillRect(bx+bw-22, by+16, 16, 11);
+  ctx.strokeStyle='#c8a000'; ctx.lineWidth=1;
+  ctx.strokeRect(bx+6,  by+16, 16, 11);
+  ctx.strokeRect(bx+bw-22, by+16, 16, 11);
+
+  // Door line
+  ctx.strokeStyle='#c8a000'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(bx+bw/2,by+14); ctx.lineTo(bx+bw/2,by+40); ctx.stroke();
+
+  // Wheels
+  ctx.fillStyle='#222';
+  ctx.beginPath(); ctx.arc(bx+14, by+40, 6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx+bw-14, by+40, 6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#888';
+  ctx.beginPath(); ctx.arc(bx+14, by+40, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx+bw-14, by+40, 3, 0, Math.PI*2); ctx.fill();
+
+  // Headlights / taillights
+  ctx.fillStyle='#ffffaa';
+  ctx.fillRect(bx+4, by+28, 5, 4);
+  ctx.fillStyle='#ff4444';
+  ctx.fillRect(bx+bw-9, by+28, 5, 4);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+//  GROUND
+// ═══════════════════════════════════════════
+const groundTile=(()=>{
+  const c=document.createElement('canvas'); c.width=80; c.height=GROUND_H;
+  const g=c.getContext('2d');
+  g.fillStyle='#c8c0b0'; g.fillRect(0,0,80,16);
+  g.fillStyle='#6a6a72'; g.fillRect(0,16,80,GROUND_H-16);
+  g.strokeStyle='#b0a898'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(20,0); g.lineTo(20,14); g.stroke();
+  g.beginPath(); g.moveTo(50,0); g.lineTo(50,14); g.stroke();
+  g.strokeStyle='#f0c030'; g.lineWidth=2; g.setLineDash([14,10]);
+  g.beginPath(); g.moveTo(0,34); g.lineTo(80,34); g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle='#ffffff'; g.lineWidth=1.5;
+  g.beginPath(); g.moveTo(0,18); g.lineTo(80,18); g.stroke();
+  return c;
+})();
+
+// ═══════════════════════════════════════════
+//  GAME LOGIC
+// ═══════════════════════════════════════════
+function init(){
+  birdY=H/2-30; birdVY=0; birdAngle=0;
+  pipes=[]; score=0; particles=[];
+  lastPipeTime=0; groundOffset=0;
+  scoreDisplay.textContent=0;
+}
+
+function flap(){
+  if(state==='idle'){
+    state='playing'; overlay.classList.add('hidden');
+    init(); birdVY=FLAP_POWER;
+    lastTime=performance.now(); requestAnimationFrame(loop); return;
+  }
+  if(state==='dead'){
+    state='idle';
+    overlay.innerHTML=`
+      <div class="bird-emoji">🐦</div>
+      <div class="overlay-title">BIG APPLE<br>BIRD</div>
+      <div class="overlay-sub">NYC pigeon on the loose!<br>Dodge buildings, subway<br>cars &amp; yellow cabs!<br><br>TAP or SPACE to flap</div>
+      <div class="overlay-sub blink">— TAP TO START —</div>`;
+    overlay.classList.remove('hidden'); return;
+  }
+  if(state==='playing'){
+    birdVY=FLAP_POWER;
+    spawnParticles(BIRD_X,birdY,'#c8ccd8',5);
+  }
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++) particles.push({x,y,vx:(Math.random()-0.5)*4,vy:(Math.random()-1)*4,life:1,color});
+}
+
+// Obstacle types: 0=building, 1=subway, 2=taxi  (weighted: buildings more common)
+const OBS_TYPES=['building','building','building','subway','subway','taxi','taxi'];
+function spawnPipe(){
+  const minTop=70, maxTop=H-GROUND_H-PIPE_GAP-80;
+  const topH=Math.random()*(maxTop-minTop)+minTop;
+  const style=Math.floor(Math.random()*BLDG_STYLES.length);
+  const type=OBS_TYPES[Math.floor(Math.random()*OBS_TYPES.length)];
+  pipes.push({x:W+10,topH,scored:false,style,type});
+}
+
+// ═══════════════════════════════════════════
+//  DRAW
+// ═══════════════════════════════════════════
+function drawBg(){
+  ctx.drawImage(bgSkyline,0,0);
+  clouds.forEach(cl=>{
+    ctx.fillStyle='rgba(255,255,255,0.82)';
+    ctx.beginPath();
+    ctx.arc(cl.x,cl.y,cl.w*0.3,0,Math.PI*2);
+    ctx.arc(cl.x+cl.w*0.28,cl.y-cl.w*0.12,cl.w*0.25,0,Math.PI*2);
+    ctx.arc(cl.x+cl.w*0.55,cl.y,cl.w*0.28,0,Math.PI*2);
+    ctx.arc(cl.x+cl.w*0.2,cl.y+cl.w*0.08,cl.w*0.22,0,Math.PI*2);
+    ctx.fill();
+    if(state==='playing'){ cl.x-=cl.speed; if(cl.x+cl.w<0){cl.x=W+20;cl.y=30+Math.random()*120;} }
+  });
+  // Sun
+  ctx.fillStyle='#ffe066'; ctx.shadowColor='#ffcc00'; ctx.shadowBlur=22;
+  ctx.beginPath(); ctx.arc(W-55,45,22,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+  ctx.strokeStyle='#ffe488'; ctx.lineWidth=2;
+  for(let a=0;a<Math.PI*2;a+=Math.PI/4){
+    ctx.beginPath(); ctx.moveTo(W-55+Math.cos(a)*26,45+Math.sin(a)*26);
+    ctx.lineTo(W-55+Math.cos(a)*36,45+Math.sin(a)*36); ctx.stroke();
+  }
+}
+
+function drawGround(){
+  const tileW=80;
+  groundOffset=(groundOffset+(state==='playing'?PIPE_SPEED:0))%tileW;
+  const gy=H-GROUND_H;
+  for(let x=-groundOffset;x<W;x+=tileW) ctx.drawImage(groundTile,x,gy);
+  ctx.strokeStyle='#a09888'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,H-GROUND_H); ctx.lineTo(W,H-GROUND_H); ctx.stroke();
+}
+
+function drawObstacle(pipe){
+  const bottomY=pipe.topH+PIPE_GAP;
+  const bottomH=H-GROUND_H-bottomY;
+  if(pipe.type==='building'){
+    drawBuilding(pipe.x, pipe.topH, true,  pipe.style);
+    drawBuilding(pipe.x, bottomH,   false, (pipe.style+2)%BLDG_STYLES.length);
+  } else if(pipe.type==='subway'){
+    drawSubway(pipe.x, pipe.topH, bottomH);
+  } else {
+    drawTaxiStack(pipe.x, pipe.topH, true);
+    drawTaxiStack(pipe.x, bottomH, false);
+  }
+}
+
+function drawBird(){
+  ctx.save();
+  ctx.translate(BIRD_X,birdY); ctx.rotate(birdAngle);
+  ctx.drawImage((Math.sin(lastTime*0.018)>0)?pigeonUp:pigeonDown,-BIRD_SIZE/2,-BIRD_SIZE/2);
+  ctx.restore();
+}
+
+function drawParticles(){
+  particles.forEach(p=>{ ctx.globalAlpha=p.life; ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,3*p.life,0,Math.PI*2); ctx.fill(); });
+  ctx.globalAlpha=1;
+}
+
+function drawScore(){
+  ctx.fillStyle='#1a1a2e'; ctx.font='20px "Press Start 2P"'; ctx.textAlign='center';
+  ctx.shadowColor='rgba(255,255,255,0.9)'; ctx.shadowBlur=8;
+  ctx.fillText(score,W/2,42); ctx.shadowBlur=0;
+}
+
+function checkCollision(){
+  if(birdY+BIRD_R>=H-GROUND_H||birdY-BIRD_R<=0) return true;
+  for(const p of pipes){
+    if(BIRD_X+BIRD_R>p.x+5&&BIRD_X-BIRD_R<p.x+OBS_WIDTH-5)
+      if(birdY-BIRD_R<p.topH||birdY+BIRD_R>p.topH+PIPE_GAP) return true;
+  }
+  return false;
+}
+
+function die(){
+  state='dead';
+  spawnParticles(BIRD_X,birdY,'#c8ccd8',18);
+  spawnParticles(BIRD_X,birdY,'#ffe488',12);
+  if(score>best) best=score;
+  bestDisplay.textContent=best;
+  setTimeout(()=>{
+    overlay.innerHTML=`
+      <div class="overlay-title">SPLAT! 💥</div>
+      <div class="score-display">YOUR SCORE<br>${score}<br><br>BEST SCORE<br>${best}</div>
+      <div class="overlay-sub blink">— TAP OR SPACE TO RETRY —</div>`;
+    overlay.classList.remove('hidden');
+  },600);
+}
+
+function loop(ts){
+  lastTime=ts;
+  if(state==='playing'){
+    birdVY+=GRAVITY; birdY+=birdVY;
+    birdAngle=Math.max(-0.5,Math.min(1.2,birdVY*0.06));
+    if(ts-lastPipeTime>PIPE_INTERVAL){ spawnPipe(); lastPipeTime=ts; }
+    pipes.forEach(p=>p.x-=PIPE_SPEED);
+    pipes=pipes.filter(p=>p.x+OBS_WIDTH>-20);
+    pipes.forEach(p=>{
+      if(!p.scored&&p.x+OBS_WIDTH<BIRD_X){
+        p.scored=true; score++; scoreDisplay.textContent=score;
+        spawnParticles(BIRD_X,birdY-20,'#ffe488',8);
+      }
+    });
+    if(checkCollision()) die();
+  }
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life-=0.04; });
+  particles=particles.filter(p=>p.life>0);
+
+  drawBg(); pipes.forEach(drawObstacle); drawGround(); drawBird(); drawParticles();
+  if(state==='playing') drawScore();
+  if(state==='idle'){ birdY=H/2-30+Math.sin(ts*0.002)*10; birdAngle=Math.sin(ts*0.002)*0.18; pipes=[]; }
+  if(state!=='dead') requestAnimationFrame(loop);
+  else if(particles.length>0) requestAnimationFrame(deadLoop);
+}
+
+function deadLoop(ts){
+  lastTime=ts;
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life-=0.035; });
+  particles=particles.filter(p=>p.life>0);
+  drawBg(); pipes.forEach(drawObstacle); drawGround(); drawBird(); drawParticles();
+  if(particles.length>0) requestAnimationFrame(deadLoop);
+}
+
+// ═══════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════
+document.addEventListener('keydown',e=>{ if(e.code==='Space'){e.preventDefault();flap();} });
+
+// iOS Safari requires explicit touchstart — pointerdown is unreliable on iOS
+let lastFlapTime=0;
+function handleInput(e){
+  e.preventDefault();
+  e.stopPropagation();
+  const now=performance.now();
+  if(now-lastFlapTime<120) return; // debounce
+  lastFlapTime=now;
+  flap();
+}
+// touchstart for iOS Safari (most reliable)
+canvas.addEventListener('touchstart', handleInput, {passive:false});
+document.body.addEventListener('touchstart', handleInput, {passive:false});
+// click fallback for desktop/Android
+canvas.addEventListener('click', handleInput, {passive:false});
+
+init(); lastTime=performance.now(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
