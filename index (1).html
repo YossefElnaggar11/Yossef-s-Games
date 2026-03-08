@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Flap Around the World</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html{height:100%;height:-webkit-fill-available;}
+  body{
+    background:#1a1a2e;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    width:100%;height:100%;min-height:-webkit-fill-available;
+    font-family:'Press Start 2P',monospace;
+    overflow:hidden;touch-action:none;-ms-touch-action:none;
+    overscroll-behavior:none;user-select:none;-webkit-user-select:none;
+    position:fixed;top:0;left:0;right:0;bottom:0;
+  }
+  #game-wrapper{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;padding:8px;}
+  #title{color:#fff;font-size:clamp(10px,3vw,18px);text-shadow:2px 2px 0 #c00,4px 4px 0 #800;letter-spacing:1px;}
+  #canvas-container{
+    position:relative;border:4px solid #fff;
+    box-shadow:0 0 0 3px #c00,0 0 30px rgba(255,200,0,0.25);
+    border-radius:6px;
+    max-width:min(360px,calc(100vw - 16px));
+    max-height:min(520px,calc(100dvh - 100px));
+    aspect-ratio:360/520;overflow:hidden;
+  }
+  canvas{display:block;width:100%;height:100%;border-radius:3px;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;}
+  #score-bar{display:flex;justify-content:space-between;width:min(360px,calc(100vw - 16px));color:#fff;font-size:clamp(7px,2vw,9px);text-shadow:1px 1px 0 #000;}
+  #overlay{
+    position:absolute;top:0;left:0;width:100%;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    border-radius:3px;z-index:10;pointer-events:auto;
+  }
+  #overlay.hidden{display:none;}
+  /* City select screen */
+  #city-select{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;padding:16px;}
+  #city-select.hidden{display:none;}
+  .city-buttons{display:flex;flex-direction:column;gap:10px;width:90%;}
+  .city-btn{
+    padding:12px 8px;border:3px solid #fff;border-radius:8px;
+    font-family:'Press Start 2P',monospace;font-size:clamp(8px,2.2vw,11px);
+    cursor:pointer;text-align:center;line-height:1.8;
+    transition:transform 0.1s,box-shadow 0.1s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .city-btn:active{transform:scale(0.96);}
+  .city-btn.nyc{background:rgba(10,20,70,0.92);color:#ffe066;border-color:#ffe066;box-shadow:0 0 12px rgba(255,224,102,0.3);}
+  .city-btn.cairo{background:rgba(50,20,0,0.92);color:#f5c842;border-color:#f5c842;box-shadow:0 0 12px rgba(245,200,66,0.3);}
+  .city-btn.india{background:rgba(40,5,50,0.92);color:#ff9933;border-color:#ff9933;box-shadow:0 0 12px rgba(255,153,51,0.3);}
+  .select-title{color:#fff;font-size:clamp(12px,3.5vw,17px);text-shadow:2px 2px 0 #000,0 0 12px rgba(100,180,255,0.8);text-align:center;line-height:1.8;}
+  .select-sub{color:#cce;font-size:clamp(6px,1.8vw,8px);text-align:center;line-height:2;text-shadow:1px 1px 0 #000;}
+  .overlay-title{color:#fff;font-size:clamp(13px,4vw,18px);text-shadow:2px 2px 0 #000;text-align:center;line-height:1.8;}
+  .overlay-sub{color:#eee;font-size:clamp(6px,1.8vw,8px);text-align:center;line-height:2.2;}
+  .score-display{color:#fff;font-size:clamp(8px,2.5vw,11px);text-align:center;line-height:2.4;}
+  .blink{animation:blink 1s step-end infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+  .bird-emoji{font-size:clamp(26px,8vw,36px);animation:wobble 1.2s ease-in-out infinite;}
+  @keyframes wobble{0%,100%{transform:rotate(-8deg) scale(1)}50%{transform:rotate(8deg) scale(1.1)}}
+  .back-btn{
+    position:absolute;top:8px;left:8px;z-index:20;
+    background:rgba(0,0,0,0.5);color:#fff;border:2px solid #fff;
+    border-radius:6px;padding:6px 10px;font-family:'Press Start 2P',monospace;
+    font-size:clamp(6px,1.8vw,8px);cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #speed-indicator{
+    position:absolute;top:8px;right:8px;z-index:5;
+    color:#fff;font-size:clamp(5px,1.4vw,7px);
+    text-shadow:1px 1px 0 #000;opacity:0.7;
+  }
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <div id="title">🌍 FLAP AROUND THE WORLD</div>
+  <div id="score-bar">
+    <span>SCORE: <span id="score-display">0</span></span>
+    <span>BEST: <span id="best-display">0</span></span>
+  </div>
+  <div id="canvas-container">
+    <canvas id="gameCanvas" width="360" height="520"></canvas>
+    <button class="back-btn" id="back-btn" style="display:none">◀ MENU</button>
+    <div id="speed-indicator" style="display:none"></div>
+    <div id="overlay">
+      <!-- City select shown first -->
+      <div id="city-select">
+        <div class="select-title">🌍 FLAP AROUND<br>THE WORLD</div>
+        <div class="select-sub">Choose your city!</div>
+        <div class="city-buttons">
+          <button class="city-btn nyc" data-city="nyc">🗽 NEW YORK CITY</button>
+          <button class="city-btn cairo" data-city="cairo">🏺 EGYPT</button>
+          <button class="city-btn india" data-city="india">🕌 INDIA</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay');
+const citySelect=document.getElementById('city-select');
+const scoreDisplay=document.getElementById('score-display');
+const bestDisplay=document.getElementById('best-display');
+const backBtn=document.getElementById('back-btn');
+const speedIndicator=document.getElementById('speed-indicator');
+const W=canvas.width, H=canvas.height;
+
+// ── DIFFICULTY SCALING ──────────────────────────────────────
+const BASE_SPEED=2.4, BASE_GAP=158, BASE_INTERVAL=1650;
+function getSpeed(){ return Math.min(BASE_SPEED + score*0.04, 6.5); }
+function getGap(){   return Math.max(BASE_GAP  - score*1.2,  105); }
+function getInterval(){ return Math.max(BASE_INTERVAL - score*12, 900); }
+
+// ── STATE ───────────────────────────────────────────────────
+const GRAVITY=0.45, FLAP_POWER=-8.5;
+const OBS_WIDTH=68, GROUND_H=56, BIRD_X=80, BIRD_R=13;
+let state='menu', city='nyc';
+let score=0, best={nyc:0,cairo:0,india:0};
+let birdY,birdVY,birdAngle;
+let pipes=[],lastPipeTime=0,lastTime=0;
+let particles=[],groundOffset=0,clouds=[];
+let animRunning=false;
+
+// ── CITY CONFIG ─────────────────────────────────────────────
+const CITY_CONFIG={
+  nyc:{
+    title:'NEW YORK CITY', emoji:'🗽',
+    deathMsg:'SPLAT! 💥',
+    birdColor:'#8a9ab0', flapColor:'#c8ccd8',
+    scoreColor:'#1a1a2e', scoreShadow:'rgba(255,255,255,0.9)',
+    obstacleTypes:['building','building','building','subway','subway','taxi','taxi'],
+  },
+  cairo:{
+    title:'EGYPT', emoji:'🏺',
+    deathMsg:'CRASH! 💥',
+    birdColor:'#8b5e1a', flapColor:'#e8c870',
+    scoreColor:'#fff8e0', scoreShadow:'rgba(0,0,0,0.8)',
+    obstacleTypes:['pyramid','pyramid','pyramid','microbus','microbus','sphinx'],
+  },
+  india:{
+    title:'INDIA', emoji:'🕌',
+    deathMsg:'BONK! 💥',
+    birdColor:'#22aa44', flapColor:'#88ff88',
+    scoreColor:'#fff8e0', scoreShadow:'rgba(0,0,0,0.8)',
+    obstacleTypes:['tajmahal','tajmahal','tajmahal','temple','temple','arch'],
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+//  BIRD SPRITES
+// ═══════════════════════════════════════════════════════════
+const BIRD_SIZE=36;
+
+// NYC Pigeon
+function makePigeon(wingUp){
+  const c=document.createElement('canvas');c.width=BIRD_SIZE;c.height=BIRD_SIZE;
+  const g=c.getContext('2d');
+  g.fillStyle='#7a8090';g.beginPath();g.ellipse(7,21,8,5,0.3,0,Math.PI*2);g.fill();
+  g.fillStyle='#8a9ab0';g.beginPath();g.ellipse(18,19,13,10,0,0,Math.PI*2);g.fill();
+  g.fillStyle='#6abf8a';g.beginPath();g.ellipse(22,14,6,5,-0.2,0,Math.PI*2);g.fill();
+  g.fillStyle='#a06abf';g.globalAlpha=0.5;g.beginPath();g.ellipse(22,14,5,4,-0.2,0,Math.PI*2);g.fill();g.globalAlpha=1;
+  if(wingUp){g.fillStyle='#6a7585';g.beginPath();g.ellipse(16,11,10,5,-0.5,0,Math.PI*2);g.fill();g.fillStyle='#555f6e';g.beginPath();g.ellipse(13,9,6,3,-0.7,0,Math.PI*2);g.fill();}
+  else{g.fillStyle='#6a7585';g.beginPath();g.ellipse(16,25,10,5,0.5,0,Math.PI*2);g.fill();g.fillStyle='#555f6e';g.beginPath();g.ellipse(13,27,6,3,0.7,0,Math.PI*2);g.fill();}
+  g.fillStyle='#c5ccd8';g.beginPath();g.ellipse(20,21,7,5,0.15,0,Math.PI*2);g.fill();
+  g.strokeStyle='#4a5260';g.lineWidth=1.5;
+  if(wingUp){g.beginPath();g.moveTo(10,13);g.lineTo(22,12);g.stroke();g.beginPath();g.moveTo(10,15);g.lineTo(20,14);g.stroke();}
+  else{g.beginPath();g.moveTo(10,23);g.lineTo(22,24);g.stroke();g.beginPath();g.moveTo(10,25);g.lineTo(20,26);g.stroke();}
+  g.fillStyle='#8a9ab0';g.beginPath();g.arc(24,13,7,0,Math.PI*2);g.fill();
+  g.fillStyle='#e8720c';g.beginPath();g.arc(27,11,4,0,Math.PI*2);g.fill();
+  g.fillStyle='#fff';g.beginPath();g.arc(27,11,2.8,0,Math.PI*2);g.fill();
+  g.fillStyle='#111';g.beginPath();g.arc(27.5,11,1.6,0,Math.PI*2);g.fill();
+  g.fillStyle='#fff';g.beginPath();g.arc(28.2,10.2,0.7,0,Math.PI*2);g.fill();
+  g.fillStyle='#ccc';g.beginPath();g.moveTo(31,11);g.lineTo(36,13);g.lineTo(31,15);g.closePath();g.fill();
+  g.fillStyle='#999';g.beginPath();g.moveTo(31,13);g.lineTo(36,13);g.lineTo(31,15);g.closePath();g.fill();
+  g.strokeStyle='#e8909a';g.lineWidth=1.5;
+  [[16,28,14,34],[14,34,11,36],[14,34,16,36],[20,28,18,34],[18,34,15,36],[18,34,20,36]].forEach(([x1,y1,x2,y2])=>{g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();});
+  return c;
+}
+
+// Cairo Eagle
+function makeEagle(wingUp){
+  const c=document.createElement('canvas');c.width=BIRD_SIZE;c.height=BIRD_SIZE;
+  const g=c.getContext('2d');
+  // tail feathers
+  g.fillStyle='#6b4c12';g.beginPath();g.ellipse(6,22,9,4,0.4,0,Math.PI*2);g.fill();
+  // body - brown eagle
+  g.fillStyle='#8b5e1a';g.beginPath();g.ellipse(18,19,13,9,0,0,Math.PI*2);g.fill();
+  // white chest
+  g.fillStyle='#e8e0c8';g.beginPath();g.ellipse(21,21,7,6,0.1,0,Math.PI*2);g.fill();
+  // wings spread wide
+  if(wingUp){
+    g.fillStyle='#6b4c12';g.beginPath();g.moveTo(8,16);g.lineTo(0,4);g.lineTo(18,12);g.closePath();g.fill();
+    g.fillStyle='#5a3c0a';g.beginPath();g.moveTo(8,16);g.lineTo(2,6);g.lineTo(14,11);g.closePath();g.fill();
+  } else {
+    g.fillStyle='#6b4c12';g.beginPath();g.moveTo(8,20);g.lineTo(0,30);g.lineTo(18,22);g.closePath();g.fill();
+    g.fillStyle='#5a3c0a';g.beginPath();g.moveTo(8,20);g.lineTo(2,28);g.lineTo(14,23);g.closePath();g.fill();
+  }
+  // head - white (like a bald eagle / egyptian eagle)
+  g.fillStyle='#f0ead8';g.beginPath();g.arc(25,12,7,0,Math.PI*2);g.fill();
+  // eye
+  g.fillStyle='#ffcc00';g.beginPath();g.arc(28,10,3.5,0,Math.PI*2);g.fill();
+  g.fillStyle='#111';g.beginPath();g.arc(28.5,10,2,0,Math.PI*2);g.fill();
+  g.fillStyle='#fff';g.beginPath();g.arc(29.2,9.2,0.7,0,Math.PI*2);g.fill();
+  // curved eagle beak
+  g.fillStyle='#e8a000';
+  g.beginPath();g.moveTo(30,10);g.quadraticCurveTo(36,10,34,15);g.lineTo(30,13);g.closePath();g.fill();
+  // talons
+  g.strokeStyle='#5a3c0a';g.lineWidth=2;
+  g.beginPath();g.moveTo(17,27);g.lineTo(14,33);g.stroke();
+  g.beginPath();g.moveTo(14,33);g.lineTo(10,35);g.stroke();
+  g.beginPath();g.moveTo(14,33);g.lineTo(15,36);g.stroke();
+  g.beginPath();g.moveTo(21,27);g.lineTo(20,33);g.stroke();
+  g.beginPath();g.moveTo(20,33);g.lineTo(17,35);g.stroke();
+  g.beginPath();g.moveTo(20,33);g.lineTo(22,36);g.stroke();
+  return c;
+}
+
+// India Parrot
+function makeParrot(wingUp){
+  const c=document.createElement('canvas');c.width=BIRD_SIZE;c.height=BIRD_SIZE;
+  const g=c.getContext('2d');
+  // tail - long pointed
+  g.fillStyle='#1a8a30';g.beginPath();g.moveTo(4,18);g.lineTo(0,28);g.lineTo(8,22);g.closePath();g.fill();
+  g.fillStyle='#0a6020';g.beginPath();g.moveTo(4,18);g.lineTo(2,24);g.lineTo(8,22);g.closePath();g.fill();
+  // body
+  g.fillStyle='#22aa44';g.beginPath();g.ellipse(18,19,13,10,0,0,Math.PI*2);g.fill();
+  // wing
+  if(wingUp){
+    g.fillStyle='#1a8a30';g.beginPath();g.ellipse(15,10,11,5,-0.5,0,Math.PI*2);g.fill();
+    g.fillStyle='#0a6020';g.beginPath();g.ellipse(12,8,7,3,-0.6,0,Math.PI*2);g.fill();
+  } else {
+    g.fillStyle='#1a8a30';g.beginPath();g.ellipse(15,26,11,5,0.5,0,Math.PI*2);g.fill();
+    g.fillStyle='#0a6020';g.beginPath();g.ellipse(12,28,7,3,0.6,0,Math.PI*2);g.fill();
+  }
+  // yellow belly
+  g.fillStyle='#ccdd44';g.beginPath();g.ellipse(20,21,6,5,0.1,0,Math.PI*2);g.fill();
+  // red collar ring
+  g.strokeStyle='#dd2222';g.lineWidth=2.5;
+  g.beginPath();g.arc(22,15,5,0.5,2.6);g.stroke();
+  // head
+  g.fillStyle='#22aa44';g.beginPath();g.arc(24,13,7,0,Math.PI*2);g.fill();
+  // eye
+  g.fillStyle='#fff';g.beginPath();g.arc(27,11,3.5,0,Math.PI*2);g.fill();
+  g.fillStyle='#111';g.beginPath();g.arc(27.5,11,2,0,Math.PI*2);g.fill();
+  g.fillStyle='#fff';g.beginPath();g.arc(28.3,10.2,0.8,0,Math.PI*2);g.fill();
+  // curved parrot beak - red
+  g.fillStyle='#cc2200';
+  g.beginPath();g.moveTo(30,9);g.quadraticCurveTo(36,9,34,14);g.lineTo(30,12);g.closePath();g.fill();
+  g.fillStyle='#ff4400';g.beginPath();g.moveTo(30,9);g.lineTo(36,9);g.lineTo(34,11);g.lineTo(30,11);g.closePath();g.fill();
+  // feet
+  g.strokeStyle='#996600';g.lineWidth=1.5;
+  [[16,28,14,34],[14,34,11,36],[14,34,16,36],[20,28,18,34],[18,34,15,36],[18,34,20,36]].forEach(([x1,y1,x2,y2])=>{g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();});
+  return c;
+}
+
+const sprites={
+  nyc:[makePigeon(true),makePigeon(false)],
+  cairo:[makeEagle(true),makeEagle(false)],
+  india:[makeParrot(true),makeParrot(false)],
+};
+
+// ═══════════════════════════════════════════════════════════
+//  BACKGROUNDS (pre-rendered per city)
+// ═══════════════════════════════════════════════════════════
+function makeNYCbg(){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d');
+  const sky=g.createLinearGradient(0,0,0,H-GROUND_H);
+  sky.addColorStop(0,'#5ba3d9');sky.addColorStop(0.4,'#87bfe8');sky.addColorStop(0.75,'#b8d9f0');sky.addColorStop(1,'#d0e8f5');
+  g.fillStyle=sky;g.fillRect(0,0,W,H-GROUND_H);
+  const bgs=[{x:0,w:30,h:160},{x:28,w:20,h:120},{x:46,w:35,h:180},{x:79,w:18,h:140},{x:95,w:28,h:200},{x:121,w:22,h:150},{x:141,w:40,h:220},{x:179,w:15,h:170},{x:192,w:32,h:190},{x:222,w:24,h:160},{x:244,w:36,h:230},{x:278,w:20,h:130},{x:296,w:30,h:210},{x:324,w:25,h:175},{x:347,w:15,h:150}];
+  const gy=H-GROUND_H;
+  bgs.forEach(b=>{g.fillStyle='#7a9bbf';g.globalAlpha=0.55;g.fillRect(b.x,gy-b.h,b.w,b.h);g.globalAlpha=1;});
+  return c;
+}
+
+function makeCairoBg(){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d');
+  // Desert sky - warm golden
+  const sky=g.createLinearGradient(0,0,0,H-GROUND_H);
+  sky.addColorStop(0,'#e8a030');sky.addColorStop(0.3,'#f0c060');sky.addColorStop(0.7,'#f8e090');sky.addColorStop(1,'#fef0b0');
+  g.fillStyle=sky;g.fillRect(0,0,W,H-GROUND_H);
+  // Heat haze shimmer band
+  g.fillStyle='rgba(255,230,150,0.3)';g.fillRect(0,H-GROUND_H-60,W,30);
+  // Distant pyramids silhouette
+  const gy=H-GROUND_H;
+  const dpyrs=[{x:20,w:80,h:90},{x:120,w:60,h:70},{x:220,w:70,h:80},{x:300,w:50,h:60}];
+  dpyrs.forEach(p=>{
+    g.fillStyle='rgba(180,140,60,0.4)';
+    g.beginPath();g.moveTo(p.x+p.w/2,gy-p.h);g.lineTo(p.x,gy);g.lineTo(p.x+p.w,gy);g.closePath();g.fill();
+  });
+  // Sun - blazing
+  g.fillStyle='#fff5a0';g.shadowColor='#ffaa00';g.shadowBlur=30;
+  g.beginPath();g.arc(W-50,40,25,0,Math.PI*2);g.fill();g.shadowBlur=0;
+  return c;
+}
+
+function makeIndiaBg(){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d');
+  // Vibrant Indian sky - sunset/dawn pinks and oranges
+  const sky=g.createLinearGradient(0,0,0,H-GROUND_H);
+  sky.addColorStop(0,'#1a0a3a');sky.addColorStop(0.3,'#6a2080');sky.addColorStop(0.6,'#e05020');sky.addColorStop(0.85,'#f8a040');sky.addColorStop(1,'#fcd080');
+  g.fillStyle=sky;g.fillRect(0,0,W,H-GROUND_H);
+  const gy=H-GROUND_H;
+  // Distant temple silhouettes
+  function drawDistantTemple(gx,gw,gh){
+    g.fillStyle='rgba(30,10,50,0.6)';
+    // main spire
+    g.beginPath();g.moveTo(gx+gw/2,gy-gh);g.lineTo(gx+gw/2-gw*0.15,gy-gh*0.6);g.lineTo(gx+gw/2+gw*0.15,gy-gh*0.6);g.closePath();g.fill();
+    // base
+    g.fillRect(gx,gy-gh*0.6,gw,gh*0.6);
+    // small side spires
+    g.beginPath();g.moveTo(gx+gw*0.2,gy-gh*0.7);g.lineTo(gx+gw*0.1,gy-gh*0.45);g.lineTo(gx+gw*0.3,gy-gh*0.45);g.closePath();g.fill();
+    g.beginPath();g.moveTo(gx+gw*0.8,gy-gh*0.7);g.lineTo(gx+gw*0.7,gy-gh*0.45);g.lineTo(gx+gw*0.9,gy-gh*0.45);g.closePath();g.fill();
+  }
+  drawDistantTemple(10,60,140);drawDistantTemple(90,40,110);drawDistantTemple(160,70,160);
+  drawDistantTemple(260,50,120);drawDistantTemple(310,65,145);
+  // Moon + stars
+  g.fillStyle='#ffe8a0';g.shadowColor='#ffcc44';g.shadowBlur=15;
+  g.beginPath();g.arc(50,45,16,0,Math.PI*2);g.fill();g.shadowBlur=0;
+  g.fillStyle='rgba(30,20,60,0.7)';g.beginPath();g.arc(42,42,13,0,Math.PI*2);g.fill();
+  // stars
+  [[100,20],[150,15],[200,30],[250,12],[300,25],[330,18],[80,35],[130,40]].forEach(([sx,sy])=>{
+    g.fillStyle='#fff';g.globalAlpha=0.8;g.beginPath();g.arc(sx,sy,1.2,0,Math.PI*2);g.fill();
+  });g.globalAlpha=1;
+  return c;
+}
+
+const backgrounds={nyc:makeNYCbg(),cairo:makeCairoBg(),india:makeIndiaBg()};
+
+// Clouds (shared, styled per city)
+for(let i=0;i<5;i++) clouds.push({x:Math.random()*W,y:30+Math.random()*120,w:50+Math.random()*60,speed:0.15+Math.random()*0.2});
+
+// ═══════════════════════════════════════════════════════════
+//  GROUND TILES
+// ═══════════════════════════════════════════════════════════
+function makeNYCground(){
+  const c=document.createElement('canvas');c.width=80;c.height=GROUND_H;
+  const g=c.getContext('2d');
+  g.fillStyle='#c8c0b0';g.fillRect(0,0,80,16);
+  g.fillStyle='#6a6a72';g.fillRect(0,16,80,GROUND_H-16);
+  g.strokeStyle='#b0a898';g.lineWidth=1;
+  g.beginPath();g.moveTo(20,0);g.lineTo(20,14);g.stroke();
+  g.beginPath();g.moveTo(50,0);g.lineTo(50,14);g.stroke();
+  g.strokeStyle='#f0c030';g.lineWidth=2;g.setLineDash([14,10]);
+  g.beginPath();g.moveTo(0,34);g.lineTo(80,34);g.stroke();g.setLineDash([]);
+  g.strokeStyle='#ffffff';g.lineWidth=1.5;g.beginPath();g.moveTo(0,18);g.lineTo(80,18);g.stroke();
+  return c;
+}
+function makeCairoground(){
+  const c=document.createElement('canvas');c.width=80;c.height=GROUND_H;
+  const g=c.getContext('2d');
+  // Sandy desert ground
+  g.fillStyle='#c8a840';g.fillRect(0,0,80,GROUND_H);
+  g.fillStyle='#b89030';g.fillRect(0,0,80,8);
+  // sand texture dots
+  for(let i=0;i<20;i++){
+    g.fillStyle=`rgba(${180+Math.random()*40|0},${140+Math.random()*30|0},${40+Math.random()*20|0},0.5)`;
+    g.beginPath();g.arc(Math.random()*80,8+Math.random()*(GROUND_H-8),1.5,0,Math.PI*2);g.fill();
+  }
+  // Road markings (cairo style - worn)
+  g.strokeStyle='rgba(255,255,255,0.3)';g.lineWidth=2;g.setLineDash([10,12]);
+  g.beginPath();g.moveTo(0,30);g.lineTo(80,30);g.stroke();g.setLineDash([]);
+  return c;
+}
+function makeIndiaground(){
+  const c=document.createElement('canvas');c.width=80;c.height=GROUND_H;
+  const g=c.getContext('2d');
+  // Marble/stone floor - white with gold trim
+  g.fillStyle='#e8e0d0';g.fillRect(0,0,80,GROUND_H);
+  g.fillStyle='#d4c8b0';g.fillRect(0,0,80,10);
+  // marble lines
+  g.strokeStyle='#c0b090';g.lineWidth=1;
+  g.beginPath();g.moveTo(0,10);g.lineTo(80,10);g.stroke();
+  g.beginPath();g.moveTo(26,0);g.lineTo(26,GROUND_H);g.stroke();
+  g.beginPath();g.moveTo(53,0);g.lineTo(53,GROUND_H);g.stroke();
+  // gold trim
+  g.strokeStyle='#cc8800';g.lineWidth=2;
+  g.beginPath();g.moveTo(0,8);g.lineTo(80,8);g.stroke();
+  // decorative dots
+  [13,40,67].forEach(dx=>{g.fillStyle='#cc8800';g.beginPath();g.arc(dx,4,2,0,Math.PI*2);g.fill();});
+  return c;
+}
+const groundTiles={nyc:makeNYCground(),cairo:makeCairoground(),india:makeIndiaground()};
+
+// ═══════════════════════════════════════════════════════════
+//  NYC OBSTACLES
+// ═══════════════════════════════════════════════════════════
+const BLDG_STYLES=[
+  {primary:'#1c2540',accent:'#141a30',top:'spire'},
+  {primary:'#0d2235',accent:'#0a1a28',top:'flat'},
+  {primary:'#2d1a10',accent:'#3d2518',top:'cornice'},
+  {primary:'#101820',accent:'#0a1215',top:'flat'},
+  {primary:'#1e1808',accent:'#2a2210',top:'stepped'},
+];
+function drawWindows(bx,by,bw,bh){
+  const cols=Math.floor((bw-10)/12),rows=Math.floor((bh-20)/14);
+  const sx=bx+(bw-cols*12)/2,sy=by+18;
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const wx=sx+c*12,wy=sy+r*14,lit=Math.random()>0.5;
+    ctx.fillStyle=lit?(Math.random()>0.5?'#a8cce8':'#d0e8f5'):'#050a10';
+    ctx.globalAlpha=lit?0.6+Math.random()*0.35:0.85;
+    ctx.fillRect(wx,wy,6,8);
+  }ctx.globalAlpha=1;
+}
+function drawWaterTower(x,y){
+  ctx.fillStyle='#3d2010';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+12,y);ctx.lineTo(x+10,y+16);ctx.lineTo(x+2,y+16);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#2a1508';ctx.fillRect(x+4,y+16,4,5);
+  ctx.strokeStyle='#1a0d04';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x+1,y+6);ctx.lineTo(x+11,y+6);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+1,y+11);ctx.lineTo(x+11,y+11);ctx.stroke();
+}
+function drawBuilding(bx,height,fromTop,si){
+  const s=BLDG_STYLES[si%BLDG_STYLES.length],bw=OBS_WIDTH,gy=H-GROUND_H;
+  const grad=ctx.createLinearGradient(bx,0,bx+bw,0);
+  grad.addColorStop(0,s.accent);grad.addColorStop(0.4,s.primary);grad.addColorStop(1,'#03060a');
+  if(fromTop){
+    ctx.fillStyle=grad;ctx.fillRect(bx,0,bw,height);
+    drawWindows(bx,0,bw,height);
+    ctx.fillStyle=s.accent;ctx.fillRect(bx-5,height-14,bw+10,16);
+    ctx.fillStyle='rgba(255,255,255,0.06)';ctx.fillRect(bx+3,0,5,height);
+  } else {
+    const by=gy-height;
+    ctx.fillStyle=grad;ctx.fillRect(bx,by,bw,height);
+    drawWindows(bx,by,bw,height);
+    ctx.fillStyle=s.accent;ctx.fillRect(bx-5,by,bw+10,16);
+    ctx.fillStyle='rgba(255,255,255,0.06)';ctx.fillRect(bx+3,by+16,5,height-16);
+    if(s.top==='spire'){
+      ctx.fillStyle='#8899aa';ctx.beginPath();ctx.moveTo(bx+bw/2,by-32);ctx.lineTo(bx+bw/2-5,by);ctx.lineTo(bx+bw/2+5,by);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#8899aa';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(bx+bw/2,by-32);ctx.lineTo(bx+bw/2,by-50);ctx.stroke();
+      ctx.fillStyle='#ff4444';ctx.beginPath();ctx.arc(bx+bw/2,by-50,2.5,0,Math.PI*2);ctx.fill();
+    } else if(s.top==='stepped'){
+      ctx.fillStyle=s.accent;ctx.fillRect(bx+5,by-12,bw-10,12);ctx.fillRect(bx+12,by-22,bw-24,10);ctx.fillRect(bx+18,by-30,bw-36,8);
+    } else if(s.top==='cornice'){
+      ctx.fillStyle=s.accent;ctx.fillRect(bx-7,by-10,bw+14,10);
+    } else {
+      ctx.fillStyle='#333';ctx.fillRect(bx+8,by-9,14,9);ctx.fillRect(bx+bw-24,by-11,12,11);
+    }
+    if(si%3===0) drawWaterTower(bx+bw-18,by-30);
+  }
+}
+function drawSubwayCar(bx,y,carH,flipped){
+  const bw=OBS_WIDTH,bodyH=Math.min(carH,52),bodyY=flipped?y+carH-bodyH:y;
+  const sg=ctx.createLinearGradient(bx,0,bx+bw,0);
+  sg.addColorStop(0,'#1a3a8a');sg.addColorStop(0.5,'#2255bb');sg.addColorStop(1,'#102060');
+  ctx.fillStyle=sg;const r=4;
+  ctx.beginPath();ctx.moveTo(bx+r,bodyY);ctx.lineTo(bx+bw-r,bodyY);ctx.arcTo(bx+bw,bodyY,bx+bw,bodyY+r,r);ctx.lineTo(bx+bw,bodyY+bodyH-r);ctx.arcTo(bx+bw,bodyY+bodyH,bx+bw-r,bodyY+bodyH,r);ctx.lineTo(bx+r,bodyY+bodyH);ctx.arcTo(bx,bodyY+bodyH,bx,bodyY+bodyH-r,r);ctx.lineTo(bx,bodyY+r);ctx.arcTo(bx,bodyY,bx+r,bodyY,r);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#c0c8d8';ctx.fillRect(bx,bodyY+10,bw,6);
+  const winY=bodyY+18;[8,22,36,50].forEach(wx=>{if(bx+wx+10<bx+bw-4){ctx.fillStyle='#aad4f8';ctx.fillRect(bx+wx,winY,10,14);ctx.strokeStyle='#334';ctx.lineWidth=1;ctx.strokeRect(bx+wx,winY,10,14);}});
+  ctx.fillStyle='#0d2070';ctx.fillRect(bx+bw/2-6,bodyY+16,12,bodyH-16);
+  ctx.fillStyle='#888';ctx.fillRect(bx+bw/2-1,bodyY+bodyH/2,2,5);
+  ctx.fillStyle='#555';if(flipped)ctx.fillRect(bx+4,bodyY,bw-8,4);else ctx.fillRect(bx+4,bodyY+bodyH-4,bw-8,4);
+  if(carH>bodyH+2){const sy2=flipped?y:bodyY+bodyH,sh=carH-bodyH;ctx.fillStyle='#223355';ctx.fillRect(bx+10,sy2,bw-20,sh);ctx.strokeStyle='#556688';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(bx+18,sy2);ctx.lineTo(bx+18,sy2+sh);ctx.stroke();ctx.beginPath();ctx.moveTo(bx+bw-18,sy2);ctx.lineTo(bx+bw-18,sy2+sh);ctx.stroke();}
+}
+function drawSubway(bx,topH,bottomH){
+  drawSubwayCar(bx,0,topH,true);
+  drawSubwayCar(bx,H-GROUND_H-bottomH,bottomH,false);
+}
+function drawTaxi(bx,by,flipped){
+  const bw=OBS_WIDTH;ctx.save();
+  if(flipped){ctx.translate(bx+bw/2,by+23);ctx.scale(1,-1);ctx.translate(-(bx+bw/2),-(by+23));}
+  ctx.fillStyle='#f5c500';ctx.fillRect(bx+4,by+14,bw-8,26);
+  ctx.fillStyle='#e6b800';ctx.beginPath();ctx.moveTo(bx+14,by+14);ctx.lineTo(bx+12,by+4);ctx.lineTo(bx+bw-12,by+4);ctx.lineTo(bx+bw-14,by+14);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#fff';ctx.fillRect(bx+bw/2-10,by+1,20,8);
+  ctx.fillStyle='#111';ctx.font='bold 5px monospace';ctx.textAlign='center';ctx.fillText('TAXI',bx+bw/2,by+7);
+  ctx.fillStyle='#aad4f8';ctx.fillRect(bx+15,by+6,bw-30,9);
+  ctx.fillStyle='#88c4f0';ctx.fillRect(bx+6,by+16,16,11);ctx.fillRect(bx+bw-22,by+16,16,11);
+  ctx.strokeStyle='#c8a000';ctx.lineWidth=1;ctx.strokeRect(bx+6,by+16,16,11);ctx.strokeRect(bx+bw-22,by+16,16,11);
+  ctx.strokeStyle='#c8a000';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(bx+bw/2,by+14);ctx.lineTo(bx+bw/2,by+40);ctx.stroke();
+  ctx.fillStyle='#222';ctx.beginPath();ctx.arc(bx+14,by+40,6,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(bx+bw-14,by+40,6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#888';ctx.beginPath();ctx.arc(bx+14,by+40,3,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(bx+bw-14,by+40,3,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffffaa';ctx.fillRect(bx+4,by+28,5,4);ctx.fillStyle='#ff4444';ctx.fillRect(bx+bw-9,by+28,5,4);
+  ctx.restore();
+}
+function drawTaxiStack(bx,height,fromTop){
+  const bw=OBS_WIDTH,taxiH=46,gy=H-GROUND_H;
+  if(fromTop){
+    ctx.fillStyle='#1a1a22';ctx.fillRect(bx,0,bw,height);
+    let y=height-taxiH;while(y>-taxiH){drawTaxi(bx,y,true);y-=taxiH+2;}
+    ctx.fillStyle='#f5c500';ctx.fillRect(bx-5,height-8,bw+10,10);
+  } else {
+    const sy=gy-height;ctx.fillStyle='#1a1a22';ctx.fillRect(bx,sy,bw,height);
+    let y=sy;while(y<gy){drawTaxi(bx,y,false);y+=taxiH+2;}
+    ctx.fillStyle='#f5c500';ctx.fillRect(bx-5,sy,bw+10,10);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CAIRO OBSTACLES
+// ═══════════════════════════════════════════════════════════
+function drawPyramid(bx,height,fromTop){
+  const bw=OBS_WIDTH,gy=H-GROUND_H;
+  const sandGrad=ctx.createLinearGradient(bx,0,bx+bw,0);
+  sandGrad.addColorStop(0,'#b8882a');sandGrad.addColorStop(0.4,'#d4a840');sandGrad.addColorStop(1,'#8a6010');
+
+  if(fromTop){
+    // Top pyramid - pointy at bottom, base at top screen edge
+    ctx.fillStyle=sandGrad;
+    ctx.beginPath();
+    ctx.moveTo(bx-8,0);          // top-left (wider than bw)
+    ctx.lineTo(bx+bw+8,0);       // top-right
+    ctx.lineTo(bx+bw/2,height);  // pointy tip at bottom
+    ctx.closePath();ctx.fill();
+    // stone lines
+    ctx.strokeStyle='rgba(100,60,0,0.4)';ctx.lineWidth=1;
+    for(let yy=height*0.2;yy<height;yy+=height*0.15){
+      const frac=yy/height;
+      const hw=(bw/2+8)*(1-frac);
+      ctx.beginPath();ctx.moveTo(bx+bw/2-hw,yy);ctx.lineTo(bx+bw/2+hw,yy);ctx.stroke();
+    }
+    // highlight
+    ctx.fillStyle='rgba(255,220,100,0.2)';
+    ctx.beginPath();ctx.moveTo(bx+bw/2,height);ctx.lineTo(bx+bw/2+10,height*0.3);ctx.lineTo(bx+bw+8,0);ctx.lineTo(bx+bw/2+20,0);ctx.closePath();ctx.fill();
+  } else {
+    // Bottom pyramid - base at bottom, pointy at top
+    const by=gy-height;
+    ctx.fillStyle=sandGrad;
+    ctx.beginPath();
+    ctx.moveTo(bx+bw/2,by);      // pointy tip at top
+    ctx.lineTo(bx-8,gy);         // bottom-left
+    ctx.lineTo(bx+bw+8,gy);      // bottom-right
+    ctx.closePath();ctx.fill();
+    // stone lines
+    ctx.strokeStyle='rgba(100,60,0,0.4)';ctx.lineWidth=1;
+    for(let yy=by+height*0.15;yy<gy;yy+=height*0.15){
+      const frac=(yy-by)/height;
+      const hw=(bw/2+8)*frac;
+      ctx.beginPath();ctx.moveTo(bx+bw/2-hw,yy);ctx.lineTo(bx+bw/2+hw,yy);ctx.stroke();
+    }
+    // highlight side
+    ctx.fillStyle='rgba(255,220,100,0.2)';
+    ctx.beginPath();ctx.moveTo(bx+bw/2,by);ctx.lineTo(bx+bw+8,gy);ctx.lineTo(bx+bw/2+20,gy);ctx.closePath();ctx.fill();
+    // entrance detail at base
+    ctx.fillStyle='rgba(60,30,0,0.6)';
+    ctx.fillRect(bx+bw/2-8,gy-18,16,18);
+  }
+}
+
+function drawMicrobus(bx,height,fromTop){
+  // Egyptian microbus - boxy colorful minibus
+  const bw=OBS_WIDTH,gy=H-GROUND_H;
+  const busH=48;
+  if(fromTop){
+    ctx.fillStyle='#442200';ctx.fillRect(bx,0,bw,height);
+    let y=height-busH;
+    while(y>-busH){
+      ctx.save();ctx.translate(bx+bw/2,y+busH/2);ctx.scale(1,-1);ctx.translate(-(bx+bw/2),-(y+busH/2));
+      _drawOneMicrobus(bx,y,bw);ctx.restore();
+      y-=busH+3;
+    }
+    ctx.fillStyle='#cc6600';ctx.fillRect(bx-4,height-8,bw+8,10);
+  } else {
+    const sy=gy-height;ctx.fillStyle='#442200';ctx.fillRect(bx,sy,bw,height);
+    let y=sy;
+    while(y<gy){ _drawOneMicrobus(bx,y,bw); y+=busH+3; }
+    ctx.fillStyle='#cc6600';ctx.fillRect(bx-4,sy,bw+8,10);
+  }
+}
+function _drawOneMicrobus(bx,by,bw){
+  // body
+  ctx.fillStyle='#e8e0c0';ctx.fillRect(bx+2,by+8,bw-4,38);
+  // colorful stripe
+  ctx.fillStyle='#cc4400';ctx.fillRect(bx+2,by+16,bw-4,6);
+  ctx.fillStyle='#228844';ctx.fillRect(bx+2,by+22,bw-4,4);
+  // windshield
+  ctx.fillStyle='#aad4f8';ctx.fillRect(bx+8,by+8,bw-16,10);
+  // windows
+  ctx.fillStyle='#88c4f0';ctx.fillRect(bx+4,by+28,14,10);ctx.fillRect(bx+22,by+28,14,10);ctx.fillRect(bx+40,by+28,20,10);
+  ctx.strokeStyle='#aaa';ctx.lineWidth=1;
+  ctx.strokeRect(bx+4,by+28,14,10);ctx.strokeRect(bx+22,by+28,14,10);ctx.strokeRect(bx+40,by+28,20,10);
+  // wheels
+  ctx.fillStyle='#222';ctx.beginPath();ctx.arc(bx+14,by+46,6,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(bx+bw-14,by+46,6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#888';ctx.beginPath();ctx.arc(bx+14,by+46,3,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(bx+bw-14,by+46,3,0,Math.PI*2);ctx.fill();
+  // arabic text hint
+  ctx.fillStyle='#cc4400';ctx.font='bold 6px sans-serif';ctx.textAlign='center';ctx.fillText('القاهرة',bx+bw/2,by+14);
+}
+
+function drawSphinx(bx,height,fromTop){
+  // Draw a proper sphinx silhouette facing left, scaled to fit the obstacle height
+  // The sphinx sits on a limestone plinth. The gap is between two sphinx obstacles.
+  // We draw a pre-scaled version centered in the OBS_WIDTH column.
+  const bw=OBS_WIDTH, gy=H-GROUND_H;
+  ctx.save();
+
+  if(fromTop){
+    // Top sphinx - flipped vertically, hanging from ceiling
+    ctx.save();
+    ctx.translate(bx+bw/2, height/2);
+    ctx.scale(1,-1);
+    ctx.translate(-(bx+bw/2), -height/2);
+    _drawFullSphinx(bx, 0, bw, height);
+    ctx.restore();
+  } else {
+    const by=gy-height;
+    _drawFullSphinx(bx, by, bw, height);
+  }
+  ctx.restore();
+}
+
+function _drawFullSphinx(bx, by, bw, bh){
+  // Draw a proper side-profile sphinx facing right within bounding box bx,by,bw,bh
+  const cx=bx+bw/2;
+  const scale=bw/80; // normalize to 80px wide design
+
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.scale(bw/80, bh/120); // scale to fit
+
+  const S=80, H2=120; // design space
+
+  // === BASE PLINTH ===
+  ctx.fillStyle='#b8903a';
+  ctx.fillRect(0, H2-18, S, 18);
+  // plinth shading
+  ctx.fillStyle='#9a7428';
+  ctx.fillRect(0, H2-18, S, 4);
+
+  // === BODY (lion body lying down) ===
+  // Main body - elongated haunches to chest
+  ctx.fillStyle='#d4a84a';
+  // back haunch
+  ctx.beginPath();
+  ctx.ellipse(18, H2-32, 18, 16, 0, 0, Math.PI*2);
+  ctx.fill();
+  // mid body
+  ctx.fillRect(14, H2-44, 40, 28);
+  // front chest (taller, more upright)
+  ctx.fillStyle='#dbb050';
+  ctx.beginPath();
+  ctx.ellipse(58, H2-38, 14, 20, 0.15, 0, Math.PI*2);
+  ctx.fill();
+
+  // front paws stretched forward
+  ctx.fillStyle='#c89840';
+  ctx.beginPath();
+  ctx.roundRect(38, H2-22, 38, 10, 4);
+  ctx.fill();
+  // paw toes
+  ctx.fillStyle='#b88030';
+  [40,48,56,64].forEach(px=>{
+    ctx.beginPath();ctx.ellipse(px+2,H2-14,3,4,0,0,Math.PI*2);ctx.fill();
+  });
+
+  // === BODY SHADING ===
+  ctx.fillStyle='rgba(120,70,0,0.2)';
+  ctx.fillRect(14, H2-44, 40, 8);
+
+  // === NECK ===
+  ctx.fillStyle='#d4a84a';
+  ctx.beginPath();
+  ctx.moveTo(48,H2-56);
+  ctx.lineTo(62,H2-56);
+  ctx.lineTo(66,H2-42);
+  ctx.lineTo(50,H2-40);
+  ctx.closePath();
+  ctx.fill();
+
+  // === NEMES HEADDRESS (striped cloth) ===
+  // Main nemes cloth - trapezoid
+  ctx.fillStyle='#c8a830';
+  ctx.beginPath();
+  ctx.moveTo(42,H2-100); // top of head
+  ctx.lineTo(72,H2-100);
+  ctx.lineTo(78,H2-62);  // right side falls to shoulder
+  ctx.lineTo(44,H2-58);  // left side
+  ctx.closePath();ctx.fill();
+  // nemes stripes
+  ctx.strokeStyle='rgba(100,60,0,0.35)';ctx.lineWidth=1.5;
+  for(let i=0;i<5;i++){
+    const yt=H2-97+i*7;
+    const xl=43+i*0.5, xr=71+i*1.2;
+    ctx.beginPath();ctx.moveTo(xl,yt);ctx.lineTo(xr,yt);ctx.stroke();
+  }
+  // side lappets hanging down
+  ctx.fillStyle='#b89020';
+  ctx.beginPath();ctx.moveTo(72,H2-96);ctx.lineTo(78,H2-62);ctx.lineTo(76,H2-58);ctx.lineTo(70,H2-90);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(44,H2-96);ctx.lineTo(44,H2-58);ctx.lineTo(48,H2-58);ctx.lineTo(48,H2-92);ctx.closePath();ctx.fill();
+  // uraeus (cobra) on forehead
+  ctx.fillStyle='#ffcc00';
+  ctx.beginPath();ctx.arc(54,H2-98,3,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#cc9900';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(54,H2-95);ctx.quadraticCurveTo(58,H2-88,54,H2-84);ctx.stroke();
+
+  // === FACE ===
+  ctx.fillStyle='#e0b060';
+  ctx.beginPath();
+  ctx.ellipse(57,H2-80,13,15,0,0,Math.PI*2);
+  ctx.fill();
+  // face shading/contour
+  ctx.fillStyle='#c89840';
+  ctx.beginPath();ctx.ellipse(55,H2-76,5,7,0.2,0,Math.PI*2);ctx.fill();
+
+  // eye socket (almond shaped, Egyptian style)
+  ctx.fillStyle='#2a1400';
+  ctx.beginPath();
+  ctx.moveTo(62,H2-85);ctx.quadraticCurveTo(68,H2-83,65,H2-81);ctx.quadraticCurveTo(61,H2-79,57,H2-81);ctx.quadraticCurveTo(54,H2-84,62,H2-85);
+  ctx.fill();
+  // white of eye
+  ctx.fillStyle='#fff8e0';
+  ctx.beginPath();ctx.ellipse(62,H2-83,4,2.5,0,0,Math.PI*2);ctx.fill();
+  // iris
+  ctx.fillStyle='#5a3000';ctx.beginPath();ctx.arc(63,H2-83,1.8,0,Math.PI*2);ctx.fill();
+  // kohl eyeliner extending back
+  ctx.strokeStyle='#1a0a00';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(54,H2-83);ctx.lineTo(70,H2-84);ctx.stroke();
+
+  // nose (damaged like real sphinx - flattened)
+  ctx.fillStyle='#c89030';
+  ctx.beginPath();ctx.ellipse(68,H2-74,4,2,0,0,Math.PI*2);ctx.fill();
+
+  // lips
+  ctx.strokeStyle='#8a5020';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(63,H2-69);ctx.quadraticCurveTo(68,H2-67,72,H2-69);ctx.stroke();
+  // small smile
+  ctx.beginPath();ctx.moveTo(63,H2-69);ctx.quadraticCurveTo(65,H2-66,68,H2-67);ctx.stroke();
+
+  // === CEREMONIAL BEARD ===
+  ctx.fillStyle='#b88828';
+  ctx.beginPath();
+  ctx.moveTo(55,H2-65);ctx.lineTo(58,H2-50);ctx.lineTo(64,H2-50);ctx.lineTo(66,H2-65);
+  ctx.closePath();ctx.fill();
+  // beard stripes
+  ctx.strokeStyle='rgba(80,40,0,0.4)';ctx.lineWidth=1;
+  [H2-62,H2-58,H2-54].forEach(yl=>{ctx.beginPath();ctx.moveTo(56,yl);ctx.lineTo(65,yl);ctx.stroke();});
+  // beard curl at bottom
+  ctx.fillStyle='#a07020';ctx.beginPath();ctx.ellipse(61,H2-50,4,3,0,0,Math.PI*2);ctx.fill();
+
+  // === TAIL (curled up) ===
+  ctx.strokeStyle='#b88030';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(4,H2-32);ctx.quadraticCurveTo(0,H2-50,8,H2-46);ctx.stroke();
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INDIA OBSTACLES
+// ═══════════════════════════════════════════════════════════
+
+// TAJ MAHAL — white marble with iconic onion dome, 4 minarets, arched facade
+function drawTajMahal(bx,height,fromTop){
+  const bw=OBS_WIDTH, gy=H-GROUND_H;
+  const cx=bx+bw/2;
+
+  // marble body gradient — crisp white/ivory
+  const mg=ctx.createLinearGradient(bx,0,bx+bw,0);
+  mg.addColorStop(0,'#ddd8ee'); mg.addColorStop(0.5,'#f5f0ff'); mg.addColorStop(1,'#c8c0e0');
+
+  if(fromTop){
+    // solid body
+    ctx.fillStyle=mg; ctx.fillRect(bx,0,bw,height);
+    // horizontal marble bands
+    ctx.strokeStyle='rgba(180,160,210,0.5)'; ctx.lineWidth=1;
+    for(let y=12;y<height-10;y+=14){ctx.beginPath();ctx.moveTo(bx+4,y);ctx.lineTo(bx+bw-4,y);ctx.stroke();}
+    // central pointed arch recess (inverted — opening faces down)
+    ctx.fillStyle='rgba(80,50,120,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(cx-10,height); ctx.lineTo(cx-10,height-26);
+    ctx.quadraticCurveTo(cx-10,height-38,cx,height-40);
+    ctx.quadraticCurveTo(cx+10,height-38,cx+10,height-26);
+    ctx.lineTo(cx+10,height); ctx.closePath(); ctx.fill();
+    // two flanking smaller arches
+    [-22,22].forEach(off=>{
+      ctx.fillStyle='rgba(80,50,120,0.4)';
+      ctx.beginPath();
+      ctx.moveTo(cx+off-6,height); ctx.lineTo(cx+off-6,height-18);
+      ctx.quadraticCurveTo(cx+off-6,height-26,cx+off,height-28);
+      ctx.quadraticCurveTo(cx+off+6,height-26,cx+off+6,height-18);
+      ctx.lineTo(cx+off+6,height); ctx.closePath(); ctx.fill();
+    });
+    // gold trim band at gap edge
+    ctx.fillStyle='#b8960a'; ctx.fillRect(bx-4,height-5,bw+8,6);
+    // four minarets hanging down at corners
+    [bx+3,bx+bw-9].forEach(mx=>{
+      ctx.fillStyle='#e8e2f8'; ctx.fillRect(mx,0,6,height-2);
+      // minaret cap (inverted bulb)
+      ctx.fillStyle='#d0c8e8';
+      ctx.beginPath(); ctx.arc(mx+3,height-14,5,0,Math.PI); ctx.fill();
+      ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(mx+3,height-19,2.5,0,Math.PI*2); ctx.fill();
+      // minaret balcony rings
+      [height*0.3,height*0.6].forEach(ry=>{
+        ctx.fillStyle='#b8a0d8'; ctx.fillRect(mx-1,ry,8,3);
+      });
+    });
+    // central inverted dome bulge
+    ctx.fillStyle='#ede8ff';
+    ctx.beginPath(); ctx.arc(cx,height,bw*0.32,Math.PI,0); ctx.fill();
+    ctx.strokeStyle='#c8b8e8'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(cx,height,bw*0.32,Math.PI,0); ctx.stroke();
+
+  } else {
+    const by=gy-height;
+    ctx.fillStyle=mg; ctx.fillRect(bx,by,bw,height);
+    // marble bands
+    ctx.strokeStyle='rgba(180,160,210,0.5)'; ctx.lineWidth=1;
+    for(let y=by+12;y<gy-6;y+=14){ctx.beginPath();ctx.moveTo(bx+4,y);ctx.lineTo(bx+bw-4,y);ctx.stroke();}
+
+    // ICONIC ONION DOME on top — the most recognisable feature
+    // outer dome silhouette
+    ctx.fillStyle='#f0ecff';
+    ctx.beginPath();
+    ctx.moveTo(cx-22,by);
+    ctx.bezierCurveTo(cx-22,by-18, cx-14,by-44, cx,by-50);
+    ctx.bezierCurveTo(cx+14,by-44, cx+22,by-18, cx+22,by);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#c0b0e0'; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx-22,by);
+    ctx.bezierCurveTo(cx-22,by-18, cx-14,by-44, cx,by-50);
+    ctx.bezierCurveTo(cx+14,by-44, cx+22,by-18, cx+22,by);
+    ctx.stroke();
+    // dome neck ring
+    ctx.fillStyle='#d8d0f0'; ctx.fillRect(cx-6,by-52,12,6);
+    // gold finial spike
+    ctx.strokeStyle='#e8aa00'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(cx,by-58); ctx.lineTo(cx,by-72); ctx.stroke();
+    ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(cx,by-73,4,0,Math.PI*2); ctx.fill();
+    // small flanking dome bumps
+    [-26,26].forEach(off=>{
+      ctx.fillStyle='#e0daf8';
+      ctx.beginPath();
+      ctx.arc(cx+off,by-8,8,Math.PI,0,true); ctx.fill();
+      ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(cx+off,by-16,2,0,Math.PI*2); ctx.fill();
+    });
+
+    // four tall minarets
+    [bx+3,bx+bw-9].forEach(mx=>{
+      ctx.fillStyle='#e8e2f8'; ctx.fillRect(mx,by,6,height);
+      // minaret pointed cap
+      ctx.fillStyle='#d8d0f0';
+      ctx.beginPath(); ctx.arc(mx+3,by,5,Math.PI,0,true); ctx.fill();
+      ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(mx+3,by-5,2.5,0,Math.PI*2); ctx.fill();
+      // balcony rings
+      [by+height*0.3, by+height*0.6].forEach(ry=>{
+        ctx.fillStyle='#b8a0d8'; ctx.fillRect(mx-1,ry,8,3);
+      });
+    });
+
+    // central pointed arch on facade
+    ctx.fillStyle='rgba(80,50,120,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(cx-11,by+8); ctx.lineTo(cx-11,by+40);
+    ctx.quadraticCurveTo(cx-11,by+52,cx,by+54);
+    ctx.quadraticCurveTo(cx+11,by+52,cx+11,by+40);
+    ctx.lineTo(cx+11,by+8); ctx.closePath(); ctx.fill();
+    // flanking smaller arches
+    [-22,22].forEach(off=>{
+      ctx.fillStyle='rgba(80,50,120,0.35)';
+      ctx.beginPath();
+      ctx.moveTo(cx+off-6,by+12); ctx.lineTo(cx+off-6,by+32);
+      ctx.quadraticCurveTo(cx+off-6,by+40,cx+off,by+42);
+      ctx.quadraticCurveTo(cx+off+6,by+40,cx+off+6,by+32);
+      ctx.lineTo(cx+off+6,by+12); ctx.closePath(); ctx.fill();
+    });
+    // gold border trim at top
+    ctx.fillStyle='#b8960a'; ctx.fillRect(bx-4,by,bw+8,5);
+    // reflecting pool hint at base (pale blue strip)
+    ctx.fillStyle='rgba(160,200,255,0.35)'; ctx.fillRect(bx+10,gy-8,bw-20,8);
+  }
+}
+
+// HINDU TEMPLE — vivid orange/red shikhara tower with proper tapering, carvings, kalasha
+function drawTemple(bx,height,fromTop){
+  const bw=OBS_WIDTH, gy=H-GROUND_H, cx=bx+bw/2;
+
+  function templeBody(by,bh,inverted){
+    // Base body — warm terracotta/sandstone
+    const tg=ctx.createLinearGradient(bx,0,bx+bw,0);
+    tg.addColorStop(0,'#7a2808'); tg.addColorStop(0.45,'#c04818'); tg.addColorStop(1,'#5a1c04');
+    ctx.fillStyle=tg; ctx.fillRect(bx,by,bw,bh);
+
+    // Shikhara tapering — multiple receding tiers that narrow toward the tip
+    const tiers=6;
+    const tipY=inverted ? by+bh : by;
+    const baseY=inverted ? by : by+bh;
+    for(let i=0;i<tiers;i++){
+      const frac=i/tiers;
+      const tw=bw*(1-frac*0.55);
+      const tx=cx-tw/2;
+      const ty=inverted ? baseY-(i+1)*((bh*0.55)/tiers) : baseY-(i+1)*((bh*0.55)/tiers);
+      const th=Math.max((bh*0.55)/tiers-1,3);
+      ctx.fillStyle=`hsl(18,${72-i*4}%,${28+i*4}%)`;
+      ctx.fillRect(tx, inverted?by+bh-(i+1)*(bh*0.55/tiers):by+(bh*0.45)+(i*(bh*0.55/tiers)), tw, th+1);
+    }
+
+    // Horizontal carved relief lines across full body
+    ctx.strokeStyle='rgba(255,140,60,0.45)'; ctx.lineWidth=1;
+    for(let y=by+10;y<by+bh-10;y+=10){
+      ctx.beginPath(); ctx.moveTo(bx+3,y); ctx.lineTo(bx+bw-3,y); ctx.stroke();
+    }
+    // Deity niches — pointed arch recesses with figure hints
+    const nicheSpacing=28;
+    for(let y=by+18;y<by+bh-24;y+=nicheSpacing){
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+      ctx.beginPath();
+      ctx.moveTo(cx-7,y); ctx.lineTo(cx-7,y+14);
+      ctx.quadraticCurveTo(cx-7,y+20,cx,y+22);
+      ctx.quadraticCurveTo(cx+7,y+20,cx+7,y+14);
+      ctx.lineTo(cx+7,y); ctx.closePath(); ctx.fill();
+      // tiny figure silhouette inside
+      ctx.fillStyle='rgba(255,140,60,0.5)';
+      ctx.beginPath(); ctx.arc(cx,y+10,3,0,Math.PI*2); ctx.fill();
+      ctx.fillRect(cx-2,y+13,4,6);
+    }
+    // Gold horizontal bands (amalaka rings)
+    [0.25,0.5,0.75].forEach(f=>{
+      ctx.fillStyle='#cc8800';
+      ctx.fillRect(bx-3,by+bh*f,bw+6,4);
+    });
+  }
+
+  if(fromTop){
+    templeBody(0,height,true);
+    // cap at gap edge — thick red beam (gopura base)
+    ctx.fillStyle='#8a1a00'; ctx.fillRect(bx-5,height-10,bw+10,11);
+    ctx.fillStyle='#ffaa00'; ctx.fillRect(bx-5,height-12,bw+10,3);
+    // inverted kalasha at tip
+    ctx.fillStyle='#cc7700'; ctx.beginPath(); ctx.arc(cx,height-3,7,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffdd00'; ctx.beginPath(); ctx.arc(cx,height-3,4,0,Math.PI*2); ctx.fill();
+  } else {
+    const by=gy-height;
+    templeBody(by,height,false);
+    // gopura base beam at top
+    ctx.fillStyle='#8a1a00'; ctx.fillRect(bx-5,by,bw+10,10);
+    ctx.fillStyle='#ffaa00'; ctx.fillRect(bx-5,by+9,bw+10,3);
+    // KALASHA finial — pot + spike + disc
+    const kx=cx, ky=by-6;
+    ctx.fillStyle='#cc7700';
+    ctx.beginPath(); ctx.ellipse(kx,ky,9,11,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffdd00';
+    ctx.beginPath(); ctx.ellipse(kx,ky,6,8,0,0,Math.PI*2); ctx.fill();
+    // disc (amalaka)
+    ctx.fillStyle='#cc8800'; ctx.fillRect(kx-11,ky-14,22,5);
+    // spike
+    ctx.strokeStyle='#ffee44'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(kx,ky-14); ctx.lineTo(kx,ky-26); ctx.stroke();
+    ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(kx,ky-28,4,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// MUGHAL ARCH GATEWAY — deep red sandstone iwan with huge pointed arch opening, tile inlay
+function drawArch(bx,height,fromTop){
+  const bw=OBS_WIDTH, gy=H-GROUND_H, cx=bx+bw/2;
+
+  function archBody(by,bh,inverted){
+    // Red Agra sandstone
+    const ag=ctx.createLinearGradient(bx,0,bx+bw,0);
+    ag.addColorStop(0,'#5a1a08'); ag.addColorStop(0.5,'#8b2e10'); ag.addColorStop(1,'#3e1006');
+    ctx.fillStyle=ag; ctx.fillRect(bx,by,bw,bh);
+
+    // White marble inlay stripes (pietra dura style)
+    ctx.strokeStyle='rgba(240,230,210,0.4)'; ctx.lineWidth=1;
+    for(let y=by+8;y<by+bh-8;y+=12){
+      ctx.beginPath(); ctx.moveTo(bx+4,y); ctx.lineTo(bx+bw-4,y); ctx.stroke();
+    }
+    // Decorative diamond/floral tile panels
+    for(let y=by+10;y<by+bh-16;y+=22){
+      // diamond inlay
+      ctx.fillStyle='rgba(240,220,180,0.3)';
+      ctx.beginPath(); ctx.moveTo(cx,y); ctx.lineTo(cx+8,y+8); ctx.lineTo(cx,y+16); ctx.lineTo(cx-8,y+8); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='rgba(240,200,100,0.5)'; ctx.lineWidth=0.8;
+      ctx.beginPath(); ctx.moveTo(cx,y); ctx.lineTo(cx+8,y+8); ctx.lineTo(cx,y+16); ctx.lineTo(cx-8,y+8); ctx.closePath(); ctx.stroke();
+    }
+    // Flanking pilasters
+    [bx+4, bx+bw-10].forEach(px=>{
+      ctx.fillStyle='rgba(240,200,150,0.25)'; ctx.fillRect(px,by,6,bh);
+      ctx.strokeStyle='rgba(240,200,150,0.4)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(px+3,by+4); ctx.lineTo(px+3,by+bh-4); ctx.stroke();
+    });
+    // Calligraphic band (white strip with dots)
+    const bandY=inverted ? by+bh*0.2 : by+bh*0.2;
+    ctx.fillStyle='rgba(255,240,200,0.3)'; ctx.fillRect(bx+2,bandY,bw-4,8);
+    ctx.fillStyle='rgba(60,20,5,0.6)';
+    for(let dx=bx+8;dx<bx+bw-8;dx+=7){ ctx.beginPath(); ctx.arc(dx,bandY+4,1.5,0,Math.PI*2); ctx.fill(); }
+  }
+
+  if(fromTop){
+    archBody(0,height,true);
+    // Gold cap at gap edge
+    ctx.fillStyle='#7a1c00'; ctx.fillRect(bx-5,height-10,bw+10,11);
+    ctx.fillStyle='#d4a000'; ctx.fillRect(bx-5,height-12,bw+10,3);
+    // Large pointed arch OPENING faces downward (the bird flies through the gap below)
+    ctx.fillStyle='rgba(20,8,2,0.7)';
+    ctx.beginPath();
+    ctx.moveTo(cx-18,height+2);
+    ctx.lineTo(cx-18,height-30);
+    ctx.quadraticCurveTo(cx-18,height-50,cx,height-54);
+    ctx.quadraticCurveTo(cx+18,height-50,cx+18,height-30);
+    ctx.lineTo(cx+18,height+2);
+    ctx.closePath(); ctx.fill();
+    // arch border
+    ctx.strokeStyle='rgba(210,170,80,0.7)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(cx-18,height);
+    ctx.lineTo(cx-18,height-30);
+    ctx.quadraticCurveTo(cx-18,height-50,cx,height-54);
+    ctx.quadraticCurveTo(cx+18,height-50,cx+18,height-30);
+    ctx.lineTo(cx+18,height);
+    ctx.stroke();
+    // battlements along top edge
+    for(let dx=bx+4;dx<bx+bw-4;dx+=10){
+      ctx.fillStyle='#6a1800'; ctx.fillRect(dx,0,6,8);
+    }
+  } else {
+    const by=gy-height;
+    archBody(by,height,false);
+    // Gold cap at top
+    ctx.fillStyle='#7a1c00'; ctx.fillRect(bx-5,by,bw+10,10);
+    ctx.fillStyle='#d4a000'; ctx.fillRect(bx-5,by+9,bw+10,3);
+    // Battlements on top
+    for(let dx=bx+4;dx<bx+bw-4;dx+=10){
+      ctx.fillStyle='#6a1800'; ctx.fillRect(dx,by-8,6,9);
+    }
+    // Large pointed arch opening faces upward
+    ctx.fillStyle='rgba(20,8,2,0.7)';
+    ctx.beginPath();
+    ctx.moveTo(cx-18,by-2);
+    ctx.lineTo(cx-18,by+32);
+    ctx.quadraticCurveTo(cx-18,by+52,cx,by+56);
+    ctx.quadraticCurveTo(cx+18,by+52,cx+18,by+32);
+    ctx.lineTo(cx+18,by-2);
+    ctx.closePath(); ctx.fill();
+    // gold arch border
+    ctx.strokeStyle='rgba(210,170,80,0.7)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(cx-18,by);
+    ctx.lineTo(cx-18,by+32);
+    ctx.quadraticCurveTo(cx-18,by+52,cx,by+56);
+    ctx.quadraticCurveTo(cx+18,by+52,cx+18,by+32);
+    ctx.lineTo(cx+18,by);
+    ctx.stroke();
+    // central finial above gateway
+    ctx.fillStyle='#cc8800'; ctx.fillRect(cx-8,by-16,16,8);
+    ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(cx,by-20,5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#ffee44'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(cx,by-25); ctx.lineTo(cx,by-34); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,by-36,3,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MASTER DRAW OBSTACLE
+// ═══════════════════════════════════════════════════════════
+function getGapForType(type){ return getGap(); }
+
+function drawObstacle(pipe){
+  const gap=getGapForType(pipe.type);
+  const bottomY=pipe.topH+gap;
+  const bottomH=H-GROUND_H-bottomY;
+  if(bottomH<=0) return;
+  switch(pipe.type){
+    case 'building': drawBuilding(pipe.x,pipe.topH,true,pipe.style); drawBuilding(pipe.x,bottomH,false,(pipe.style+2)%BLDG_STYLES.length); break;
+    case 'subway':   drawSubway(pipe.x,pipe.topH,bottomH); break;
+    case 'taxi':     drawTaxiStack(pipe.x,pipe.topH,true); drawTaxiStack(pipe.x,bottomH,false); break;
+    case 'pyramid':  drawPyramid(pipe.x,pipe.topH,true); drawPyramid(pipe.x,bottomH,false); break;
+    case 'microbus': drawMicrobus(pipe.x,pipe.topH,true); drawMicrobus(pipe.x,bottomH,false); break;
+    case 'sphinx':   drawSphinx(pipe.x,pipe.topH,true); drawSphinx(pipe.x,bottomH,false); break;
+    case 'tajmahal': drawTajMahal(pipe.x,pipe.topH,true); drawTajMahal(pipe.x,bottomH,false); break;
+    case 'temple':   drawTemple(pipe.x,pipe.topH,true); drawTemple(pipe.x,bottomH,false); break;
+    case 'arch':     drawArch(pipe.x,pipe.topH,true); drawArch(pipe.x,bottomH,false); break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BACKGROUND DRAW
+// ═══════════════════════════════════════════════════════════
+function drawBg(){
+  ctx.drawImage(backgrounds[city],0,0);
+  // NYC: white fluffy clouds / Cairo: no clouds / India: no clouds
+  if(city==='nyc'){
+    clouds.forEach(cl=>{
+      ctx.fillStyle='rgba(255,255,255,0.82)';ctx.beginPath();
+      ctx.arc(cl.x,cl.y,cl.w*0.3,0,Math.PI*2);ctx.arc(cl.x+cl.w*0.28,cl.y-cl.w*0.12,cl.w*0.25,0,Math.PI*2);
+      ctx.arc(cl.x+cl.w*0.55,cl.y,cl.w*0.28,0,Math.PI*2);ctx.arc(cl.x+cl.w*0.2,cl.y+cl.w*0.08,cl.w*0.22,0,Math.PI*2);
+      ctx.fill();
+      if(state==='playing'){cl.x-=cl.speed;if(cl.x+cl.w<0){cl.x=W+20;cl.y=30+Math.random()*120;}}
+    });
+    // NYC sun
+    ctx.fillStyle='#ffe066';ctx.shadowColor='#ffcc00';ctx.shadowBlur=22;
+    ctx.beginPath();ctx.arc(W-55,45,22,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    ctx.strokeStyle='#ffe488';ctx.lineWidth=2;
+    for(let a=0;a<Math.PI*2;a+=Math.PI/4){ctx.beginPath();ctx.moveTo(W-55+Math.cos(a)*26,45+Math.sin(a)*26);ctx.lineTo(W-55+Math.cos(a)*36,45+Math.sin(a)*36);ctx.stroke();}
+  }
+  if(city==='cairo'){
+    // heat shimmer / dust
+    clouds.forEach(cl=>{
+      ctx.fillStyle='rgba(255,220,120,0.25)';ctx.beginPath();
+      ctx.ellipse(cl.x,cl.y+80,cl.w*0.6,cl.w*0.15,0,0,Math.PI*2);ctx.fill();
+      if(state==='playing'){cl.x-=cl.speed*0.5;if(cl.x+cl.w<0)cl.x=W+20;}
+    });
+  }
+}
+
+function drawGround(){
+  const gy=H-GROUND_H;
+  if(state==='menu'){
+    // Dark space-themed strip with "Where Will You Travel?" text
+    ctx.fillStyle='rgba(5,5,20,0.85)';
+    ctx.fillRect(0,gy,W,GROUND_H);
+    // subtle top border glow
+    ctx.strokeStyle='rgba(100,160,255,0.5)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();
+    // text
+    ctx.fillStyle='#fff';
+    ctx.font='bold 13px "Press Start 2P", monospace';
+    ctx.textAlign='center';
+    ctx.shadowColor='rgba(100,180,255,0.9)';ctx.shadowBlur=12;
+    ctx.fillText('Where Will You Travel?',W/2,gy+GROUND_H/2+5);
+    ctx.shadowBlur=0;
+    return;
+  }
+  const tileW=80;
+  groundOffset=(groundOffset+(state==='playing'?getSpeed():0))%tileW;
+  for(let x=-groundOffset;x<W;x+=tileW) ctx.drawImage(groundTiles[city],x,gy);
+  const borderColors={nyc:'#a09888',cairo:'#8a6820',india:'#cc9900'};
+  ctx.strokeStyle=borderColors[city];ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,H-GROUND_H);ctx.lineTo(W,H-GROUND_H);ctx.stroke();
+}
+
+function drawBird(){
+  ctx.save();ctx.translate(BIRD_X,birdY);ctx.rotate(birdAngle);
+  const sp=sprites[city];
+  ctx.drawImage((Math.sin(lastTime*0.018)>0)?sp[0]:sp[1],-BIRD_SIZE/2,-BIRD_SIZE/2);
+  ctx.restore();
+}
+
+function drawParticles(){
+  particles.forEach(p=>{ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,3*p.life,0,Math.PI*2);ctx.fill();});
+  ctx.globalAlpha=1;
+}
+
+function drawScore(){
+  const cfg=CITY_CONFIG[city];
+  ctx.fillStyle=cfg.scoreColor;ctx.font='20px "Press Start 2P"';ctx.textAlign='center';
+  ctx.shadowColor=cfg.scoreShadow;ctx.shadowBlur=8;
+  ctx.fillText(score,W/2,42);ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GLOBE BACKGROUND (menu screen)
+// ═══════════════════════════════════════════════════════════
+let globeAngle=0;
+function drawGlobe(ts){
+  globeAngle = (ts * 0.00018) % (Math.PI*2);
+  const cx=W/2, cy=H/2-30, R=130;
+
+  // Deep space background
+  const spaceBg=ctx.createRadialGradient(cx,cy,0,cx,cy,W*0.8);
+  spaceBg.addColorStop(0,'#0a0520'); spaceBg.addColorStop(1,'#000008');
+  ctx.fillStyle=spaceBg; ctx.fillRect(0,0,W,H);
+
+  // Stars
+  ctx.fillStyle='#fff';
+  [[30,40],[80,20],[140,55],[200,15],[280,38],[320,70],[50,120],[170,90],[300,110],
+   [20,200],[100,180],[250,160],[340,190],[60,280],[190,250],[310,270],[130,320],
+   [70,380],[220,400],[350,350],[40,450],[160,470],[290,440],[320,500]].forEach(([sx,sy])=>{
+    const twinkle=0.5+0.5*Math.sin(ts*0.003+sx);
+    ctx.globalAlpha=0.3+0.7*twinkle;
+    ctx.beginPath(); ctx.arc(sx,sy,0.8+twinkle*0.8,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  // Globe glow / atmosphere halo
+  const halo=ctx.createRadialGradient(cx,cy,R*0.9,cx,cy,R*1.35);
+  halo.addColorStop(0,'rgba(60,120,255,0.18)'); halo.addColorStop(1,'rgba(0,0,40,0)');
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(cx,cy,R*1.35,0,Math.PI*2); ctx.fill();
+
+  // Clip all globe drawing to circle
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
+
+  // Ocean base
+  const oceanGrad=ctx.createRadialGradient(cx-R*0.3,cy-R*0.3,0,cx,cy,R);
+  oceanGrad.addColorStop(0,'#2a7fd4'); oceanGrad.addColorStop(0.6,'#1a5fa8'); oceanGrad.addColorStop(1,'#0a2a6a');
+  ctx.fillStyle=oceanGrad; ctx.fillRect(cx-R,cy-R,R*2,R*2);
+
+  // Landmasses — drawn as rotated shapes, globeAngle shifts them horizontally
+  // We project longitude offset as x-shift on the circle
+  function landX(lon){ return cx + R * Math.sin(lon + globeAngle); }
+  function landY(lat){ return cy - R * 0.85 * Math.sin(lat); }
+  function landVisible(lon){ const x=Math.sin(lon+globeAngle); return x>-0.85&&x<0.85; }
+
+  ctx.fillStyle='#3a9a4a';
+
+  // North America
+  const naLon=-1.7, naLat=0.7;
+  if(landVisible(naLon)){
+    const nx=landX(naLon), ny=landY(naLat);
+    const vis=Math.cos(naLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.beginPath();
+    ctx.moveTo(nx-30,ny-28); ctx.lineTo(nx+10,ny-32); ctx.lineTo(nx+28,ny-10);
+    ctx.lineTo(nx+22,ny+18); ctx.lineTo(nx+5,ny+30);  ctx.lineTo(nx-18,ny+22);
+    ctx.lineTo(nx-34,ny+5);  ctx.lineTo(nx-38,ny-12); ctx.closePath(); ctx.fill();
+    // darker mountain ridge
+    ctx.fillStyle='#2a7a38'; ctx.globalAlpha*=0.6;
+    ctx.fillRect(nx-8,ny-20,12,28); ctx.fillStyle='#3a9a4a';
+  }
+
+  // South America
+  const saLon=-1.1, saLat=-0.3;
+  if(landVisible(saLon)){
+    const sx=landX(saLon), sy=landY(saLat);
+    const vis=Math.cos(saLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.beginPath();
+    ctx.moveTo(sx-12,sy-30); ctx.lineTo(sx+14,sy-26); ctx.lineTo(sx+18,sy);
+    ctx.lineTo(sx+10,sy+28); ctx.lineTo(sx-2,sy+40);  ctx.lineTo(sx-14,sy+20);
+    ctx.lineTo(sx-18,sy);    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#2a7a38'; ctx.globalAlpha*=0.5;
+    ctx.fillRect(sx-5,sy-10,10,30); ctx.fillStyle='#3a9a4a';
+  }
+
+  // Europe
+  const euLon=0.2, euLat=0.9;
+  if(landVisible(euLon)){
+    const ex=landX(euLon), ey=landY(euLat);
+    const vis=Math.cos(euLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.beginPath();
+    ctx.moveTo(ex-18,ey-12); ctx.lineTo(ex+16,ey-16); ctx.lineTo(ex+22,ey+4);
+    ctx.lineTo(ex+8,ey+18);  ctx.lineTo(ex-10,ey+14); ctx.lineTo(ex-22,ey);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#3a9a4a';
+  }
+
+  // Africa
+  const afLon=0.35, afLat=-0.05;
+  if(landVisible(afLon)){
+    const ax=landX(afLon), ay=landY(afLat);
+    const vis=Math.cos(afLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.fillStyle='#c8a020'; // desert/savanna color
+    ctx.beginPath();
+    ctx.moveTo(ax-16,ay-38); ctx.lineTo(ax+14,ay-36); ctx.lineTo(ax+22,ay-10);
+    ctx.lineTo(ax+18,ay+20); ctx.lineTo(ax+6,ay+44);  ctx.lineTo(ax-6,ay+44);
+    ctx.lineTo(ax-20,ay+16); ctx.lineTo(ax-24,ay-14); ctx.closePath(); ctx.fill();
+    // Sahara highlight
+    ctx.fillStyle='#e8c050'; ctx.globalAlpha*=0.5;
+    ctx.fillRect(ax-12,ay-30,28,18);
+    ctx.fillStyle='#3a9a4a';
+  }
+
+  // Asia
+  const asLon=1.4, asLat=0.6;
+  if(landVisible(asLon)){
+    const asx=landX(asLon), asy=landY(asLat);
+    const vis=Math.cos(asLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.fillStyle='#3a9a4a';
+    ctx.beginPath();
+    ctx.moveTo(asx-40,asy-20); ctx.lineTo(asx+10,asy-30); ctx.lineTo(asx+44,asy-16);
+    ctx.lineTo(asx+48,asy+8);  ctx.lineTo(asx+28,asy+24); ctx.lineTo(asx-8,asy+28);
+    ctx.lineTo(asx-36,asy+12); ctx.closePath(); ctx.fill();
+    // India peninsula
+    ctx.beginPath(); ctx.moveTo(asx+12,asy+24); ctx.lineTo(asx+24,asy+24); ctx.lineTo(asx+18,asy+42); ctx.closePath(); ctx.fill();
+    // Himalayan ridge
+    ctx.fillStyle='#e8e8f0'; ctx.globalAlpha*=0.6;
+    ctx.fillRect(asx-5,asy-8,38,6);
+    ctx.fillStyle='#3a9a4a';
+  }
+
+  // Australia
+  const auLon=2.2, auLat=-0.5;
+  if(landVisible(auLon)){
+    const ux=landX(auLon), uy=landY(auLat);
+    const vis=Math.cos(auLon+globeAngle);
+    ctx.globalAlpha=Math.max(0,vis)*0.9+0.1;
+    ctx.fillStyle='#c87020';
+    ctx.beginPath();
+    ctx.moveTo(ux-20,uy-14); ctx.lineTo(ux+18,uy-16); ctx.lineTo(ux+24,uy+4);
+    ctx.lineTo(ux+14,uy+18); ctx.lineTo(ux-12,uy+16); ctx.lineTo(ux-24,uy+2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#3a9a4a';
+  }
+
+  ctx.globalAlpha=1;
+
+  // Latitude grid lines
+  ctx.strokeStyle='rgba(100,180,255,0.15)'; ctx.lineWidth=0.8;
+  [-0.6,-0.3,0,0.3,0.6].forEach(lat=>{
+    const y=cy - R*0.85*Math.sin(lat);
+    const rr=Math.sqrt(Math.max(0,R*R-(y-cy)*(y-cy)));
+    if(rr>2){ ctx.beginPath(); ctx.arc(cx,y,rr,0,Math.PI*2); ctx.stroke(); }
+  });
+  // Longitude lines
+  for(let lon=0;lon<Math.PI*2;lon+=Math.PI/6){
+    const lx=Math.sin(lon+globeAngle);
+    const rx=cx+R*lx;
+    const rr=R*Math.abs(Math.cos(lon+globeAngle));
+    if(rr>2){
+      ctx.save(); ctx.beginPath(); ctx.arc(rx,cy,rr,0,Math.PI*2); ctx.stroke(); ctx.restore();
+    }
+  }
+
+  // Equator highlight
+  ctx.strokeStyle='rgba(100,200,255,0.25)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+
+  // Cloud wisps
+  ctx.fillStyle='rgba(255,255,255,0.18)';
+  [[cx-50,cy-60,55,12],[cx+30,cy-20,45,10],[cx-20,cy+50,60,11],[cx+40,cy+70,40,9]].forEach(([x,y,w,h])=>{
+    const ox=(ts*0.015)%W;
+    ctx.beginPath(); ctx.ellipse(x+(ox%60)-30,y,w,h,0,0,Math.PI*2); ctx.fill();
+  });
+
+  ctx.restore(); // end clip
+
+  // Specular shine — top-left highlight
+  const shine=ctx.createRadialGradient(cx-R*0.45,cy-R*0.42,0,cx-R*0.2,cy-R*0.2,R*0.7);
+  shine.addColorStop(0,'rgba(255,255,255,0.22)'); shine.addColorStop(0.4,'rgba(255,255,255,0.06)'); shine.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=shine; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
+
+  // Globe border
+  ctx.strokeStyle='rgba(100,160,255,0.4)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+}
+
+
+function init(){
+  birdY=H/2-30;birdVY=0;birdAngle=0;
+  pipes=[];score=0;particles=[];
+  lastPipeTime=0;groundOffset=0;
+  scoreDisplay.textContent=0;
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++) particles.push({x,y,vx:(Math.random()-0.5)*4,vy:(Math.random()-1)*4,life:1,color});
+}
+
+function spawnPipe(){
+  const types=CITY_CONFIG[city].obstacleTypes;
+  const type=types[Math.floor(Math.random()*types.length)];
+  const gap=getGapForType(type); // use the real gap for this obstacle type
+  const minTop=70,maxTop=H-GROUND_H-gap-80;
+  if(maxTop<=minTop) return;
+  const topH=Math.random()*(maxTop-minTop)+minTop;
+  const style=Math.floor(Math.random()*BLDG_STYLES.length);
+  pipes.push({x:W+10,topH,scored:false,style,type});
+}
+
+function checkCollision(){
+  if(birdY+BIRD_R>=H-GROUND_H||birdY-BIRD_R<=0) return true;
+  for(const p of pipes){
+    const gap=getGapForType(p.type);
+    if(BIRD_X+BIRD_R>p.x+5&&BIRD_X-BIRD_R<p.x+OBS_WIDTH-5)
+      if(birdY-BIRD_R<p.topH||birdY+BIRD_R>p.topH+gap) return true;
+  }
+  return false;
+}
+
+function die(){
+  state='dead';
+  const cfg=CITY_CONFIG[city];
+  spawnParticles(BIRD_X,birdY,cfg.birdColor,18);
+  spawnParticles(BIRD_X,birdY,cfg.flapColor,12);
+  if(score>best[city]) best[city]=score;
+  bestDisplay.textContent=best[city];
+  setTimeout(()=>{
+    const bgColors={nyc:'rgba(200,220,255,0.92)',cairo:'rgba(255,230,150,0.92)',india:'rgba(60,10,80,0.92)'};
+    const txtColors={nyc:'#c00',cairo:'#cc6600',india:'#ff9933'};
+    overlay.style.background=bgColors[city];
+    overlay.innerHTML=`
+      <div class="overlay-title" style="color:${txtColors[city]}">${cfg.deathMsg}</div>
+      <div class="score-display" style="color:${city==='india'?'#fff':'#1a1a2e'}">YOUR SCORE<br>${score}<br><br>BEST SCORE<br>${best[city]}</div>
+      <div class="overlay-sub" style="color:${city==='india'?'#eee':'#333'};font-size:clamp(5px,1.5vw,7px)">Speed level: ${Math.min(Math.floor(score/5)+1,10)}/10</div>
+      <div class="overlay-sub blink" style="color:${city==='india'?'#eee':'#333'}">— TAP TO PLAY AGAIN —</div>
+      <div class="overlay-sub" style="color:${city==='india'?'#aaa':'#666'};margin-top:4px;cursor:pointer" id="menu-from-dead">◀ CHANGE CITY</div>`;
+    overlay.classList.remove('hidden');
+    document.getElementById('menu-from-dead').addEventListener('click',goToMenu);
+  },600);
+}
+
+function flap(){
+  if(state==='selecting') return;
+  if(state==='menu'){
+    // do nothing, city buttons handle it
+    return;
+  }
+  if(state==='idle'){
+    state='playing';overlay.classList.add('hidden');
+    backBtn.style.display='block';
+    speedIndicator.style.display='block';
+    init();birdVY=FLAP_POWER;
+    lastTime=performance.now();
+    if(!animRunning){animRunning=true;requestAnimationFrame(loop);}
+    return;
+  }
+  if(state==='dead'){
+    goToIdle(); return;
+  }
+  if(state==='playing'){
+    birdVY=FLAP_POWER;
+    spawnParticles(BIRD_X,birdY,CITY_CONFIG[city].flapColor,5);
+  }
+}
+
+function startCity(c){
+  city=c;
+  state='idle';
+  const cfg=CITY_CONFIG[city];
+  const bgColors={nyc:'rgba(180,210,255,0.92)',cairo:'rgba(255,235,160,0.92)',india:'rgba(50,5,70,0.92)'};
+  const titleColors={nyc:'#c00',cairo:'#cc6600',india:'#ff9933'};
+
+  overlay.style.background=bgColors[city];
+  overlay.innerHTML=`
+    <div class="bird-emoji" style="font-size:clamp(40px,12vw,56px)">${cfg.emoji}</div>
+    <div class="overlay-title" style="color:${titleColors[city]};font-size:clamp(16px,5vw,24px)">${cfg.title}</div>
+    <div class="overlay-sub blink" style="color:${city==='india'?'#eee':'#333'};margin-top:8px">— TAP TO START —</div>`;
+  overlay.classList.remove('hidden');
+  bestDisplay.textContent=best[city];
+  scoreDisplay.textContent=0;
+  // start idle animation
+  if(!animRunning){animRunning=true;requestAnimationFrame(loop);}
+}
+
+function goToMenu(){
+  state='menu';
+  pipes=[];particles=[];
+  backBtn.style.display='none';
+  speedIndicator.style.display='none';
+  overlay.style.background='rgba(0,0,0,0)';
+  overlay.innerHTML=`<div id="city-select">
+    <div class="select-title">🌍 FLAP AROUND<br>THE WORLD</div>
+    <div class="select-sub">Choose your city!</div>
+    <div class="city-buttons">
+      <button class="city-btn nyc" data-city="nyc">🗽 NEW YORK CITY</button>
+      <button class="city-btn cairo" data-city="cairo">🏺 EGYPT</button>
+      <button class="city-btn india" data-city="india">🕌 INDIA</button>
+    </div>
+  </div>`;
+  overlay.classList.remove('hidden');
+  attachCityButtons();
+  if(!animRunning){animRunning=true;requestAnimationFrame(loop);}
+}
+
+function goToIdle(){
+  state='idle';
+  const bgColors={nyc:'rgba(180,210,255,0.92)',cairo:'rgba(255,235,160,0.92)',india:'rgba(50,5,70,0.92)'};
+  const titleColors={nyc:'#c00',cairo:'#cc6600',india:'#ff9933'};
+  const cfg=CITY_CONFIG[city];
+  overlay.style.background=bgColors[city];
+  overlay.innerHTML=`
+    <div class="bird-emoji">${cfg.emoji}</div>
+    <div class="overlay-title" style="color:${titleColors[city]}">${cfg.title}</div>
+    <div class="overlay-sub blink" style="color:${city==='india'?'#eee':'#333'}">— TAP TO START —</div>`;
+  overlay.classList.remove('hidden');
+  pipes=[];
+}
+
+function attachCityButtons(){
+  document.querySelectorAll('.city-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{e.stopPropagation();startCity(btn.dataset.city);});
+    btn.addEventListener('touchstart',e=>{e.stopPropagation();e.preventDefault();startCity(btn.dataset.city);},{passive:false});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME LOOP
+// ═══════════════════════════════════════════════════════════
+function loop(ts){
+  lastTime=ts;
+  const spd=getSpeed();
+
+  if(state==='playing'){
+    birdVY+=GRAVITY;birdY+=birdVY;
+    birdAngle=Math.max(-0.5,Math.min(1.2,birdVY*0.06));
+    if(ts-lastPipeTime>getInterval()){spawnPipe();lastPipeTime=ts;}
+    pipes.forEach(p=>p.x-=spd);
+    pipes=pipes.filter(p=>p.x+OBS_WIDTH>-20);
+    pipes.forEach(p=>{
+      if(!p.scored&&p.x+OBS_WIDTH<BIRD_X){
+        p.scored=true;score++;scoreDisplay.textContent=score;
+        spawnParticles(BIRD_X,birdY-20,CITY_CONFIG[city].flapColor,8);
+      }
+    });
+    // Update speed indicator
+    const lvl=Math.min(Math.floor(score/5)+1,10);
+    speedIndicator.textContent=`LVL ${lvl}`;
+    if(checkCollision()) die();
+  }
+
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.04;});
+  particles=particles.filter(p=>p.life>0);
+
+  if(state==='menu'){
+    drawGlobe(ts);
+  } else {
+    // Draw background based on current city
+    const drawCity=(!city)?'nyc':city;
+    ctx.drawImage(backgrounds[drawCity],0,0);
+    drawBg();
+  }
+
+  pipes.forEach(drawObstacle);
+  drawGround();
+  if(state!=='menu') drawBird();
+  drawParticles();
+  if(state==='playing') drawScore();
+
+  if(state==='idle'){
+    birdY=H/2-30+Math.sin(ts*0.002)*10;birdAngle=Math.sin(ts*0.002)*0.18;pipes=[];
+  }
+
+  if(state!=='dead') requestAnimationFrame(loop);
+  else{
+    animRunning=false;
+    if(particles.length>0) requestAnimationFrame(deadLoop);
+  }
+}
+
+function deadLoop(ts){
+  lastTime=ts;
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.035;});
+  particles=particles.filter(p=>p.life>0);
+  ctx.drawImage(backgrounds[city],0,0);
+  if(city==='nyc') drawBg();
+  pipes.forEach(drawObstacle);drawGround();drawBird();drawParticles();
+  if(particles.length>0) requestAnimationFrame(deadLoop);
+  else animRunning=false;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();flap();}});
+
+let lastFlapTime=0;
+function handleInput(e){
+  // Don't flap if tapping a button
+  if(e.target.classList.contains('city-btn')||e.target.id==='back-btn'||e.target.id==='menu-from-dead') return;
+  e.preventDefault();e.stopPropagation();
+  const now=performance.now();
+  if(now-lastFlapTime<120) return;
+  lastFlapTime=now;flap();
+}
+canvas.addEventListener('touchstart',handleInput,{passive:false});
+document.body.addEventListener('touchstart',handleInput,{passive:false});
+canvas.addEventListener('click',handleInput,{passive:false});
+
+backBtn.addEventListener('click',e=>{e.stopPropagation();goToMenu();});
+backBtn.addEventListener('touchstart',e=>{e.stopPropagation();e.preventDefault();goToMenu();},{passive:false});
+
+// ═══════════════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════════════
+attachCityButtons();
+animRunning=true;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
